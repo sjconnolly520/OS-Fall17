@@ -1,0 +1,6 @@
+
+TODO:
+            Nullify SlotTable
+
+Questions:
+            What does Phase2ProcTable do? When do we add to it?

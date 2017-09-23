@@ -22,6 +22,7 @@ void check_kernel_mode(char *);
 void disableInterrupts(void);
 void enableInterrupts(void);
 void initializeInterrupts(void);
+slotPtr getAvailableSlot(void);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -143,16 +144,13 @@ int MboxCreate(int slots, int slot_size) {
             MailBoxTable[i].slotSize = slot_size;
             MailBoxTable[i].status = USED;
             enableInterrupts();
+            // Return index of new mailbox in MailBoxTable
             return i;
         }
     }
     
     // Enable interrupts
     enableInterrupts();
-    
-    // FIXME: IF MAILBOX FAILED TO CREATE ---> Return -1 (Did he say this in class?)
-    
-    // Return index of new mailbox in MailBoxTable
     return -1;
 } /* MboxCreate */
 
@@ -167,7 +165,48 @@ int MboxCreate(int slots, int slot_size) {
    ----------------------------------------------------------------------- */
 int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
     
-    return -404;
+    // Check if in kernel mode
+    check_kernel_mode("MBoxSend()");
+    // DisableInterrupts
+    disableInterrupts();
+    
+    // Error checking for parameters
+    // If mbox_id > MAXMBOX OR mbox_id < 0
+    if (mbox_id > MAXMBOX || mbox_id < 0) {
+        enableInterrupts();
+        return -1;
+    }
+    // If mailbox doesn't exits -
+    if (MailBoxTable[mbox_id].status == EMPTY) {
+        enableInterrupts();
+        return -1;
+    }
+    // If msg_size > MailBox.maxSlotSize OR msg_size < 0
+    if (msg_size > MailBoxTable[mbox_id].slotSize || msg_size < 0) {
+        enableInterrupts();
+        return -1;
+    }
+    
+    if (MailBoxTable[mbox_id].numSlotsUsed >= MailBoxTable[mbox_id].numSlots) {
+        // FIXME: BlockMe?
+    }
+    
+    // FIXME: Condition on if we have already used 2500 slots.
+    
+    slotPtr nextSlot = getAvailableSlot();
+    
+    if (nextSlot == NULL) {
+        USLOSS_Console("ERROR: MboxSend(): Slot table is full.");
+        USLOSS_Halt(1);
+    }
+    
+    MailBoxTable[mbox_id].firstSlotPtr = nextSlot;
+    MailBoxTable[mbox_id].numSlotsUsed++;
+    
+    memcpy(nextSlot->message, msg_ptr, msg_size);
+    
+    enableInterrupts();
+    return 0;
 } /* MboxSend */
 
 
@@ -231,4 +270,15 @@ void disableInterrupts() {
     return;
 } /* disableInterrupts */
 
+// FIXME: DOCUMENTATION
 void enableInterrupts(){}
+
+slotPtr getAvailableSlot() {
+    // Find and return a pointer to the first available slot
+    for (int i = 0; i < MAXSLOTS; i++) {
+        if (SlotTable[i].status == EMPTY) {
+            return &SlotTable[i];
+        }
+    }
+    return NULL;
+}

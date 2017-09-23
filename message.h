@@ -12,7 +12,7 @@ struct mailbox {
     int         numSlots;
     int         numSlotsUsed;
     int         slotSize;
-    slotPtr     startSlot;
+    slotPtr     firstSlotPtr;
     int         status;
     // blockSendList
     // blockRecieveList
@@ -21,11 +21,12 @@ struct mailbox {
 };
 
 struct mailSlot {
-    int       mboxID;
-    int       status;
-    int       slotSize;
+    int         mboxID;
+    int         status;
+    int         slotSize;
+    mailSlot *  siblingSlotPtr;
     // other items as needed...
-    // char      message[MAX_MESSAGE];
+    char      message[MAX_MESSAGE];
 };
 
 struct psrBits {
