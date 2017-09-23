@@ -24,6 +24,7 @@ struct mailSlot {
     int         mboxID;
     int         status;
     int         slotSize;
+    int         actualMessageSize;
     mailSlot *  siblingSlotPtr;
     // other items as needed...
     char      message[MAX_MESSAGE];
