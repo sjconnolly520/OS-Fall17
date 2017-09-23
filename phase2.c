@@ -17,18 +17,26 @@
 /* ------------------------- Prototypes ----------------------------------- */
 int start1 (char *);
 extern int start2 (char *);
+void nullifyMailBox(int);
 void check_kernel_mode(char *);
-int disableInterrupts(void);
-int enableInterrupts(void);
+void disableInterrupts(void);
+void enableInterrupts(void);
+void initializeInterrupts(void);
 
 /* -------------------------- Globals ------------------------------------- */
 
 int debugflag2 = 0;
 
-// the mail boxes 
+int nextMID = 0;
+int nextSlot = 0;
+
+// the mailboxes
 mailbox MailBoxTable[MAXMBOX];
 
-// also need array of mail slots, array of function ptrs to system call 
+// the mailbox slots
+mailSlot SlotTable[MAXSLOTS];
+
+// array of function ptrs to system call
 // handlers, ...
 
 
@@ -57,14 +65,22 @@ int start1(char *arg) {
     disableInterrupts();            // FIXME: Write method
 
     // Initialize the mail box table, slots, & other data structures.
-    
-    // --- First 7 mailboxes will be assigned to interrupt handlers
+    for (int i = 0; i < MAXMBOX; i++) {
+        // FIXME: --- First 7 mailboxes will be assigned to interrupt handlers
+        if (i < 7) {
+            continue;
+        }
+        MailBoxTable[i].mid = i;
+        nullifyMailBox(i);
+        // FIXME: Relationship to PID?
+    }
     
     
     // Initialize USLOSS_IntVec and system call handlers,
+    // FIXME: Write handler functions
+    initializeInterrupts();
     
-    // --- Do we want a slot table?
-    // allocate mailboxes for interrupt handlers.  Etc... 
+    // allocate mailboxes for interrupt handlers.  Etc...
 
     enableInterrupts();
 
@@ -80,6 +96,14 @@ int start1(char *arg) {
     return 0;
 } /* start1 */
 
+/*
+ * Clear all data in the called mailbox. All Mailboxes call this in start1
+ */
+void nullifyMailBox(int mailboxIndex) {
+    MailBoxTable[mailboxIndex].numSlots = -1;
+    MailBoxTable[mailboxIndex].numSlotsUsed = -1;
+    MailBoxTable[mailboxIndex].status = EMPTY;
+}
 
 /* ------------------------------------------------------------------------
    Name - MboxCreate
@@ -93,22 +117,43 @@ int start1(char *arg) {
 int MboxCreate(int slots, int slot_size) {
     
     // Check kernelMode
+    check_kernel_mode("MBoxCreate");
     // Disable Interrupts
+    disableInterrupts();
     
-    // Error Checking...
-        // slots < 0 ---> return -1
-        // slot_size < 0 ---> return -1
-        // slot_size > MAX_MESSAGE ---> -1
+    // If less than 0 slots-> Error
+    if (slots < 0) {
+        enableInterrupts();
+        return -1;
+        // FIXME: Add debug flag print statements
+    }
     
-    // Initialize Mailbox
-        // What parameters need initializing?
+    // If slot_size is outside acceptable range-> Error
+    if (slot_size < 0 || slot_size > MAX_MESSAGE) {
+        enableInterrupts();
+        return -1;
+        // FIXME: Add debug flag print statements
+    }
+    
+    // Find and Initialize Mailbox
+    for (int i = 0; i < MAXMBOX; i++) {
+        if (MailBoxTable[i].status == EMPTY) {
+            MailBoxTable[i].numSlots = slots;
+            MailBoxTable[i].numSlotsUsed = 0;
+            MailBoxTable[i].slotSize = slot_size;
+            MailBoxTable[i].status = USED;
+            enableInterrupts();
+            return i;
+        }
+    }
     
     // Enable interrupts
+    enableInterrupts();
     
     // FIXME: IF MAILBOX FAILED TO CREATE ---> Return -1 (Did he say this in class?)
     
     // Return index of new mailbox in MailBoxTable
-    return -404;
+    return -1;
 } /* MboxCreate */
 
 
@@ -140,10 +185,52 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     return -404;
 } /* MboxReceive */
 
-
+// FIXME: Edit block comment
+/* ------------------------------------------------------------------------
+ Name - check_kernel_mode
+ Purpose - Checks the current OS mode.
+ Parameters - none
+ Returns - Returns 0 if in kernel mode,
+ !0 if in user mode.
+ Side Effects - enable interrupts
+ ------------------------------------------------------------------------ */
 void check_kernel_mode(char * procName) {
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) != 0){
         USLOSS_Console("ERROR: Process %s called in user mode", procName);
         USLOSS_Halt(1);
     }
-} /* isKernel */
+} /* check_kernel_mode */
+
+/* ------------------------------------------------------------------------
+ Name - initializeinterrupts
+ Purpose - Initializes the interrupts required (clock interrupts).
+ - Initializes a non-null value for Illegal_Int in IntVec.
+ Parameters - none
+ Returns - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void initializeInterrupts() {
+    //USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
+    //USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalArgumentHandler;
+} /* initializeInterrupts */
+
+
+/* ------------------------------------------------------------------------
+ Name - disableInterrupts
+ Purpose - Disable interrupts
+ - Thows an error if USLOSS is passed an invalid PSR
+ Parameters - none
+ Returns - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void disableInterrupts() {
+    
+    if (USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR){
+        USLOSS_Console("ERROR: disableInterrupts(): Failed to disable interrupts.\n");
+    }
+    return;
+} /* disableInterrupts */
+
+void enableInterrupts(){}
+
+void _check_io(){}

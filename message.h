@@ -3,13 +3,17 @@
 
 typedef struct mailSlot *slotPtr;
 typedef struct mailbox   mailbox;
+typedef struct mailSlot  mailSlot;
 typedef struct mboxProc *mboxProcPtr;
 
 struct mailbox {
-    int       mboxID;
+    int         mid;
     // other items as needed...
-    // NumSlots
-    // NumSlotsUsed
+    int         numSlots;
+    int         numSlotsUsed;
+    int         slotSize;
+    slotPtr     startSlot;
+    int         status;
     // blockSendList
     // blockRecieveList
     // LinkedListForMessageStoring FIXME:
@@ -19,7 +23,9 @@ struct mailbox {
 struct mailSlot {
     int       mboxID;
     int       status;
+    int       slotSize;
     // other items as needed...
+    // char      message[MAX_MESSAGE];
 };
 
 struct psrBits {
@@ -34,3 +40,7 @@ union psrValues {
     struct psrBits bits;
     unsigned int integerPart;
 };
+
+
+#define EMPTY       -1
+#define USED         1
