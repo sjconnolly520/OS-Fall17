@@ -195,7 +195,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
  Side Effects - enable interrupts
  ------------------------------------------------------------------------ */
 void check_kernel_mode(char * procName) {
-    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) != 0){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
         USLOSS_Console("ERROR: Process %s called in user mode", procName);
         USLOSS_Halt(1);
     }
@@ -232,5 +232,3 @@ void disableInterrupts() {
 } /* disableInterrupts */
 
 void enableInterrupts(){}
-
-void _check_io(){}
