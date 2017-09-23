@@ -17,7 +17,7 @@
 /* ------------------------- Prototypes ----------------------------------- */
 int start1 (char *);
 extern int start2 (char *);
-int check_kernel_mode(char *);
+void check_kernel_mode(char *);
 int disableInterrupts(void);
 int enableInterrupts(void);
 
@@ -52,7 +52,7 @@ int start1(char *arg) {
     if (DEBUG2 && debugflag2)
         USLOSS_Console("start1(): at beginning\n");
 
-    check_kernel_mode("start1");    // FIXME: Write method
+    check_kernel_mode("start1");
     // Disable interrupts
     disableInterrupts();            // FIXME: Write method
 
@@ -139,3 +139,11 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     
     return -404;
 } /* MboxReceive */
+
+
+void check_kernel_mode(char * procName) {
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) != 0){
+        USLOSS_Console("ERROR: Process %s called in user mode", procName);
+        USLOSS_Halt(1);
+    }
+} /* isKernel */
