@@ -5,7 +5,7 @@ typedef struct mailSlot *slotPtr;
 typedef struct mailbox   mailbox;
 typedef struct mailSlot  mailSlot;
 typedef struct mboxProc *mboxProcPtr;
-
+typedef struct mboxProc  mboxProc;
 struct mailbox {
     int         mid;
     // other items as needed...
@@ -16,6 +16,7 @@ struct mailbox {
     int         status;
     // blockSendList
     // blockRecieveList
+    mboxProcPtr recieveBlocked;
     // LinkedListForMessageStoring FIXME:
     // status
 };
@@ -41,6 +42,12 @@ struct psrBits {
 union psrValues {
     struct psrBits bits;
     unsigned int integerPart;
+};
+
+struct mboxProc {
+	int 	pid;
+	void   *message;
+	int 	msgSize;
 };
 
 
