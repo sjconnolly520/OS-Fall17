@@ -14,19 +14,19 @@ struct mailbox {
     int         slotSize;
     slotPtr     firstSlotPtr;
     int         status;
-    // blockSendList
-    // blockRecieveList
     mboxProcPtr recieveBlocked;
+    mboxProcPtr sendBlocked;
     // LinkedListForMessageStoring FIXME:
     // status
 };
 
 struct mailSlot {
     int         mboxID;
+    int         slotID;
     int         status;
     int         slotSize;
     int         actualMessageSize;
-    mailSlot *  siblingSlotPtr;
+    slotPtr     siblingSlotPtr;
     // other items as needed...
     char      message[MAX_MESSAGE];
 };
@@ -45,11 +45,15 @@ union psrValues {
 };
 
 struct mboxProc {
-	int 	pid;
-	void   *message;
-	int 	msgSize;
+	int 	    pid;
+	void        *message;
+	int 	    msgSize;
+    mboxProcPtr next;
 };
 
 
-#define EMPTY       -1
-#define USED         1
+#define EMPTY           -1
+#define USED             1
+
+#define SEND_BLOCKED    11
+#define REC_BLOCKED     12
