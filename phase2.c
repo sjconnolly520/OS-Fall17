@@ -39,6 +39,8 @@ mailbox MailBoxTable[MAXMBOX];
 // the mailbox slots
 mailSlot SlotTable[MAXSLOTS];
 
+mboxProc mboxProcTable[50];
+
 // array of function ptrs to system call
 // handlers, ...
 
@@ -83,6 +85,12 @@ int start1(char *arg) {
         nullifySlot(i);
     }
     
+    // Initialize mboxProcTable
+    for (int i = 0; i < 50; i++){
+    	mboxProcTable[i].pid 		= -1;
+    	mboxProcTable[i].msgSize 	= -1;
+    	mboxProcTable[i].message 	= NULL;
+    }
     
     // Initialize USLOSS_IntVec and system call handlers,
     // FIXME: Write handler functions
@@ -203,6 +211,15 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
         return -1;
     }
     
+    if (MailBoxTable[mbox_id].recieveBlocked){
+    	int blockedPID = MailBoxTable[mbox_id].recieveBlocked->pid;
+    	mboxProcTable[blockedPID % MAXPROC].msgSize = msg_size;
+    	memcpy(MailBoxTable[mbox_id].recieveBlocked->message, msg_ptr, msg_size);
+    	
+    	unblockProc(blockedPID);
+    	return 0;
+    }
+    
     if (MailBoxTable[mbox_id].numSlotsUsed >= MailBoxTable[mbox_id].numSlots) {
         // FIXME: BlockMe?
     }
@@ -245,6 +262,8 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     
     check_kernel_mode("MboxReceive()");
     
+    //disable interrupts
+    
     // If mbox_id > MAXMBOX OR mbox_id < 0
     if (mbox_id > MAXMBOX || mbox_id < 0) {
         enableInterrupts();
@@ -254,6 +273,26 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     if (MailBoxTable[mbox_id].status == EMPTY) {
         enableInterrupts();
         return -1;
+    }
+    if (MailBoxTable[mbox_id].numSlotsUsed == 0){
+    	//no mail to receive... block
+    	mboxProcTable[getpid() % MAXPROC].pid = getpid();
+    	mboxProcTable[getpid() % MAXPROC].message = msg_ptr;
+    	mboxProcTable[getpid() % MAXPROC].msgSize = msg_size;
+    	
+    	//add to mailbox recieve list
+    	MailBoxTable[mbox_id].recieveBlocked = &mboxProcTable[getpid() % MAXPROC];
+    	
+    	enableInterrupts();
+    	blockMe(11);
+    	disableInterrupts();
+    	
+    	int result = mboxProcTable[getpid() % MAXPROC].msgSize;
+    	mboxProcTable[getpid() % MAXPROC].pid = -1;
+    	mboxProcTable[getpid() % MAXPROC].msgSize = -1;
+    	//re-enable and return
+    	enableInterrupts();
+    	return result;
     }
     
     // Get message size
@@ -266,6 +305,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     
     memcpy(msg_ptr, MailBoxTable[mbox_id].firstSlotPtr->message, actualMessageSize);
     
+    enableInterrupts();
     return actualMessageSize;
 } /* MboxReceive */
 
