@@ -183,6 +183,15 @@ int MboxCreate(int slots, int slot_size) {
     return -1;
 } /* MboxCreate */
 
+void printMBoxSlotContents(int mbox_id) {
+    
+    slotPtr walker = MailBoxTable[mbox_id].firstSlotPtr;
+    
+    while (walker != NULL) {
+        printf("%s\n", walker->message);
+        walker = walker->siblingSlotPtr;
+    }
+}
 
 /* ------------------------------------------------------------------------
    Name - MboxSend
@@ -293,7 +302,6 @@ void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
     slotToInsert->siblingSlotPtr = NULL;
 }
 
-
 /* ------------------------------------------------------------------------
    Name - MboxReceive
    Purpose - Get a msg from a slot of the indicated mailbox.
@@ -319,7 +327,6 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         enableInterrupts();
         return -1;
     }
-    
     
     // There is no message in the mailbox, Current will need to block.
     if (MailBoxTable[mbox_id].numSlotsUsed <= 0){
@@ -377,6 +384,10 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         memcpy(nextSlot->message, procToAdd->message, procToAdd->msgSize);
         nextSlot->actualMessageSize = procToAdd->msgSize;
         // FIXME: Do we need to nullify procToAdd->next?
+        
+        // Add the slot to the mailbox
+        asscociateSlotWithMailbox(mbox_id, nextSlot);
+        MailBoxTable[mbox_id].numSlotsUsed++;
         
         // FIXME: Nullify entry in processTable. Do we need that?
         unblockProc(procToAdd->pid);
@@ -439,6 +450,7 @@ slotPtr getAvailableSlot() {
     // Find and return a pointer to the first available slot
     for (int i = 0; i < MAXSLOTS; i++) {
         if (SlotTable[i].status == EMPTY) {
+            SlotTable[i].status = USED;
             return &SlotTable[i];
         }
     }
