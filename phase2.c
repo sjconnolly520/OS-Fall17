@@ -27,6 +27,7 @@ void disableInterrupts(void);
 void enableInterrupts(void);
 void initializeInterrupts(void);
 slotPtr getAvailableSlot(void);
+int MboxRelease(int);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -456,3 +457,11 @@ slotPtr getAvailableSlot() {
     }
     return NULL;
 }
+
+int MboxRelease(int mailboxID){
+    disableInterrupts();
+    check_kernel_mode("MboxRelease");
+    
+    
+}
+
