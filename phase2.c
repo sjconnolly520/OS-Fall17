@@ -28,6 +28,7 @@ void enableInterrupts(void);
 void initializeInterrupts(void);
 slotPtr getAvailableSlot(void);
 int MboxRelease(int);
+void clearAllSlots(slotPtr);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -91,9 +92,10 @@ int start1(char *arg) {
     
     // Initialize mboxProcTable
     for (int i = 0; i < 50; i++){
-    	mboxProcTable[i].pid 		= -1;
-    	mboxProcTable[i].msgSize 	= -1;
-    	mboxProcTable[i].message 	= NULL;
+    	mboxProcTable[i].pid 		 = -1;
+    	mboxProcTable[i].msgSize 	 = -1;
+    	mboxProcTable[i].message 	 = NULL;
+    	mboxProcTable[i].wasReleased = 0;
     }
     
     // Initialize USLOSS_IntVec and system call handlers,
@@ -123,7 +125,9 @@ void nullifyMailBox(int mailboxIndex) {
     MailBoxTable[mailboxIndex].numSlots = -1;
     MailBoxTable[mailboxIndex].numSlotsUsed = -1;
     MailBoxTable[mailboxIndex].status = EMPTY;
-    // FIXME: Initialize other fields.
+    MailBoxTable[mailboxIndex].recieveBlocked = NULL;
+    MailBoxTable[mailboxIndex].sendBlocked = NULL;
+    MailBoxTable[mailboxIndex].slotSize = -1;
 }
 
 /*
@@ -246,6 +250,13 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
         insertProcessInSendBLockedList(mbox_id, &mboxProcTable[getpid() % MAXPROC]);
         
         blockMe(SEND_BLOCKED);
+        
+        //check released / zapped after an unblockProc
+    	if (mboxProcTable[getpid() % MAXPROC].wasReleased == 1 || isZapped()){
+    		enableInterrupts();
+    		return -3;
+    	}
+    	
         return 0;
     }
     
@@ -342,6 +353,13 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     	
     	//enableInterrupts();
     	blockMe(REC_BLOCKED);
+    	
+    	//check released / zapped after an unblockProc
+    	if (mboxProcTable[getpid() % MAXPROC].wasReleased == 1 || isZapped()){
+    		enableInterrupts();
+    		return -3;
+    	}
+    	
     	//disableInterrupts();
     	
     	int receivedMessageSize = mboxProcTable[getpid() % MAXPROC].msgSize;
@@ -459,9 +477,79 @@ slotPtr getAvailableSlot() {
 }
 
 int MboxRelease(int mailboxID){
-    disableInterrupts();
-    check_kernel_mode("MboxRelease");
+	disableInterrupts();
+	check_kernel_mode("MboxRelease");
+	
+	// Error checking for parameters
+    // If mbox_id is out of bounds
+    if (mailboxID > MAXMBOX || mailboxID < 0) {
+        enableInterrupts();
+        return -1;
+    }
+    // If mailbox doesn't exits
+    if (MailBoxTable[mailboxID].status == EMPTY) {
+        enableInterrupts();
+        return -1;
+    }
     
+    if (MailBoxTable[mailboxID].sendBlocked == NULL && 
+        MailBoxTable[mailboxID].recieveBlocked == NULL ){
+        
+        //slots
+        if (MailBoxTable[mailboxID].firstSlotPtr){
+        	clearAllSlots(MailBoxTable[mailboxID].firstSlotPtr);
+        }
+        
+        //rest of mbox cleared
+        nullifyMailBox(mailboxID);
+        
+        enableInterrupts();
+        //TODO check a isZapped call from entry to MboxRelease
+        if (isZapped()) return -3;
+        return 0;
+    }
+    
+	while(MailBoxTable[mailboxID].sendBlocked != NULL){
+		MailBoxTable[mailboxID].sendBlocked->wasReleased = 1;
+		int tempPid = MailBoxTable[mailboxID].sendBlocked->pid;
+		MailBoxTable[mailboxID].sendBlocked = MailBoxTable[mailboxID].sendBlocked->next;
+		unblockProc(tempPid);
+		disableInterrupts();
+	}
+	
+	while(MailBoxTable[mailboxID].recieveBlocked != NULL){
+		MailBoxTable[mailboxID].recieveBlocked->wasReleased = 1;
+		int tempPid = MailBoxTable[mailboxID].recieveBlocked->pid;
+		MailBoxTable[mailboxID].recieveBlocked = MailBoxTable[mailboxID].recieveBlocked->next;
+		unblockProc(tempPid);
+		disableInterrupts();
+	}
+	
+	//clear slots
+    if (MailBoxTable[mailboxID].firstSlotPtr){
+        clearAllSlots(MailBoxTable[mailboxID].firstSlotPtr);
+    }
+        
+    //rest of mbox cleared
+    nullifyMailBox(mailboxID);
+        
+    enableInterrupts(); 
+      
+    //TODO check a isZapped call from entry to MboxRelease
+    if (isZapped()) return -3;
+    
+    return 0;
     
 }
+
+void clearAllSlots(slotPtr slotToClear){
+	slotPtr temp = slotToClear;
+	while(slotToClear->siblingSlotPtr != NULL){
+		slotToClear = slotToClear->siblingSlotPtr;
+		nullifySlot(temp->slotID);
+		temp = slotToClear;
+	}
+	nullifySlot(temp->slotID);
+}
+
 

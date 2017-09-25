@@ -49,6 +49,7 @@ struct mboxProc {
 	void        *message;
 	int 	    msgSize;
     mboxProcPtr next;
+    int 	    wasReleased;
 };
 
 
