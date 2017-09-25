@@ -20,6 +20,7 @@ int start1 (char *);
 extern int start2 (char *);
 void nullifyMailBox(int);
 void nullifySlot(int);
+void nullifyProc(int);
 void check_kernel_mode(char *);
 void insertProcessInSendBLockedList(int, mboxProcPtr);
 void asscociateSlotWithMailbox(int, slotPtr);
@@ -55,10 +56,10 @@ mboxProc mboxProcTable[50];
 
 /* ------------------------------------------------------------------------
    Name - start1
-   Purpose - Initializes mailboxes and interrupt vector.
-             Start the phase2 test process.
+   Purpose    - Initializes mailboxes and interrupt vector.
+              - Start the phase2 test process.
    Parameters - one, default arg passed by fork1, not used here.
-   Returns - one to indicate normal quit.
+   Returns    - one to indicate normal quit.
    Side Effects - lots since it initializes the phase2 data structures.
    ----------------------------------------------------------------------- */
 int start1(char *arg) {
@@ -73,15 +74,16 @@ int start1(char *arg) {
     // Disable interrupts
     disableInterrupts();            // FIXME: Write method
 
-    // Initialize the mail box table, slots, & other data structures.
+    // Initialize the mail box table
     for (int i = 0; i < MAXMBOX; i++) {
+        
         // FIXME: --- First 7 mailboxes will be assigned to interrupt handlers
         if (i < 7) {
             continue;
         }
-        MailBoxTable[i].mid = i;
+        
         nullifyMailBox(i);
-        // FIXME: Relationship to PID?
+        MailBoxTable[i].mid = i;
     }
     
     // Initialize slotTable
@@ -91,11 +93,8 @@ int start1(char *arg) {
     }
     
     // Initialize mboxProcTable
-    for (int i = 0; i < 50; i++){
-    	mboxProcTable[i].pid 		 = -1;
-    	mboxProcTable[i].msgSize 	 = -1;
-    	mboxProcTable[i].message 	 = NULL;
-    	mboxProcTable[i].wasReleased = 0;
+    for (int i = 0; i < MAXPROC; i++){
+        nullifyProc(i);
     }
     
     // Initialize USLOSS_IntVec and system call handlers,
@@ -118,35 +117,62 @@ int start1(char *arg) {
     return 0;
 } /* start1 */
 
-/*
- * Clear all data in the called mailbox. All Mailboxes call this in start1
- */
+/* ------------------------------------------------------------------------
+ Name - nullifyMailBox
+ Purpose     - Sets all fields in a mailbox to their starting values.
+             - All mailboxes call this function in start1()
+ Parameters  - int mailboxIndex: The index in the MailBoxTable which
+               contains the mailbox to reset values.
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void nullifyMailBox(int mailboxIndex) {
-    MailBoxTable[mailboxIndex].numSlots = -1;
-    MailBoxTable[mailboxIndex].numSlotsUsed = -1;
-    MailBoxTable[mailboxIndex].status = EMPTY;
-    MailBoxTable[mailboxIndex].recieveBlocked = NULL;
-    MailBoxTable[mailboxIndex].sendBlocked = NULL;
-    MailBoxTable[mailboxIndex].slotSize = -1;
-}
+    MailBoxTable[mailboxIndex].numSlots             = -1;
+    MailBoxTable[mailboxIndex].numSlotsUsed         = -1;
+    MailBoxTable[mailboxIndex].status               = EMPTY;
+    MailBoxTable[mailboxIndex].recieveBlocked       = NULL;
+    MailBoxTable[mailboxIndex].sendBlocked          = NULL;
+    MailBoxTable[mailboxIndex].slotSize             = -1;
+} /* nullifyMailBox */
 
-/*
- * Clear all data in the called slot. All slots call this in start1
- */
+/* ------------------------------------------------------------------------
+ Name - nullifySlot
+ Purpose    - Sets all fields in a slot to their starting values.
+            - All slots call this function in start1()
+ Parameters - int slotIndex: The index in the SlotTable which
+              contains the slot to reset values.
+ Returns    - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void nullifySlot(int slotIndex) {
-    SlotTable[slotIndex].status = EMPTY;
-    SlotTable[slotIndex].siblingSlotPtr = NULL;
-    SlotTable[slotIndex].message[0] = '\0';
-    
-}
+    SlotTable[slotIndex].status                     = EMPTY;
+    SlotTable[slotIndex].siblingSlotPtr             = NULL;
+    SlotTable[slotIndex].message[0]                 = '\0';
+} /* nullifySlot */
+
+/* ------------------------------------------------------------------------
+ Name - nullifyProc
+ Purpose    - Sets all fields in a process to their starting values.
+            - All processes call this function in start1()
+ Parameters - int process: The index in the mboxProcTable which
+              contains the process to reset values.
+ Returns    - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void nullifyProc(int processIndex) {
+    mboxProcTable[processIndex].pid            = -1;
+    mboxProcTable[processIndex].msgSize        = -1;
+    mboxProcTable[processIndex].message        = NULL;
+    mboxProcTable[processIndex].wasReleased    = 0;
+} /* nullifyProc */
 
 /* ------------------------------------------------------------------------
    Name - MboxCreate
-   Purpose - gets a free mailbox from the table of mailboxes and initializes it 
+   Purpose    - gets a free mailbox from the table of mailboxes and initializes it
    Parameters - maximum number of slots in the mailbox and the max size of a msg
                 sent to the mailbox.
-   Returns - -1 to indicate that no mailbox was created, or a value >= 0 as the
-             mailbox id.
+   Returns    - -1 to indicate that no mailbox was created, or a value >= 0 as the
+                mailbox id.
    Side Effects - initializes one element of the mail box array. 
    ----------------------------------------------------------------------- */
 int MboxCreate(int slots, int slot_size) {
@@ -160,17 +186,15 @@ int MboxCreate(int slots, int slot_size) {
     if (slots < 0) {
         enableInterrupts();
         return -1;
-        // FIXME: Add debug flag print statements
     }
     
     // If slot_size is outside acceptable range-> Error
     if (slot_size < 0 || slot_size > MAX_MESSAGE) {
         enableInterrupts();
         return -1;
-        // FIXME: Add debug flag print statements
     }
     
-    // Find and Initialize Mailbox
+    // Find and Initialize a Mailbox
     for (int i = 0; i < MAXMBOX; i++) {
         if (MailBoxTable[i].status == EMPTY) {
             MailBoxTable[i].numSlots = slots;
@@ -179,15 +203,22 @@ int MboxCreate(int slots, int slot_size) {
             MailBoxTable[i].status = USED;
             enableInterrupts();
             // Return index of new mailbox in MailBoxTable
+            // This return statement fires if everything went perfectly.
             return i;
         }
     }
     
     // Enable interrupts
     enableInterrupts();
+    
+    // Failed to create a mailbox
     return -1;
 } /* MboxCreate */
 
+
+/*
+ * This method is probably trash. It prints all messages stored in a mailbox's slots.
+ */
 void printMBoxSlotContents(int mbox_id) {
     
     slotPtr walker = MailBoxTable[mbox_id].firstSlotPtr;
@@ -196,14 +227,14 @@ void printMBoxSlotContents(int mbox_id) {
         printf("%s\n", walker->message);
         walker = walker->siblingSlotPtr;
     }
-}
+} /* printMBoxSlotContents */
 
 /* ------------------------------------------------------------------------
    Name - MboxSend
-   Purpose - Put a message into a slot for the indicated mailbox.
-             Block the sending process if no slot available.
+   Purpose    - Put a message into a slot for the indicated mailbox.
+              - Block the sending process if no slot available.
    Parameters - mailbox id, pointer to data of msg, # of bytes in msg.
-   Returns - zero if successful, -1 if invalid args.
+   Returns    - zero if successful, -1 if invalid args.
    Side Effects - none.
    ----------------------------------------------------------------------- */
 int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
@@ -239,20 +270,26 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
         USLOSS_Halt(1);
     }
     
-    // If there are no available slots in Mailbox
-    if (MailBoxTable[mbox_id].numSlotsUsed >= MailBoxTable[mbox_id].numSlots) {
-        // Add process to process table
-        mboxProcTable[getpid() % MAXPROC].pid = getpid();
-        mboxProcTable[getpid() % MAXPROC].msgSize = msg_size;
-        mboxProcTable[getpid() % MAXPROC].message = msg_ptr;
+    // Grab the loction of the MailBox at mbox_id
+    mBoxPtr currMBox = &MailBoxTable[mbox_id];
+    
+    // If there are no available slots in Mailbox, Current sendBlocks
+    if (currMBox->numSlotsUsed >= currMBox->numSlots) {
+        
+        // Add process to process table and initialize fields
+        int pid = getpid();
+        mboxProcTable[pid % MAXPROC].pid = pid;
+        mboxProcTable[pid % MAXPROC].msgSize = msg_size;
+        mboxProcTable[pid % MAXPROC].message = msg_ptr;
         
         // Insert Current process into Mailbox's sendBlockList.
-        insertProcessInSendBLockedList(mbox_id, &mboxProcTable[getpid() % MAXPROC]);
+        insertProcessInSendBLockedList(mbox_id, &mboxProcTable[pid % MAXPROC]);
         
+        // Block until there is space to send to
         blockMe(SEND_BLOCKED);
         
-        //check released / zapped after an unblockProc
-    	if (mboxProcTable[getpid() % MAXPROC].wasReleased == 1 || isZapped()){
+        // Check if the process was unblocked on a releasing mailbox or was zapped after an unblockProc
+    	if (mboxProcTable[pid % MAXPROC].wasReleased == 1 || isZapped()){
     		enableInterrupts();
     		return -3;
     	}
@@ -260,18 +297,23 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
         return 0;
     }
     
-    else if (MailBoxTable[mbox_id].recieveBlocked){
-    	int blockedPID = MailBoxTable[mbox_id].recieveBlocked->pid;
+    // If there is a process receiveBlocked on this mailbox (there is a process waiting for a message), write directly to it.
+    else if (currMBox->recieveBlocked != NULL){
+        
+        // Grab the pid of the first receiveBlocked process
+        // Copy the message from Current directly to the receiveBlocked process
+    	int blockedPID = currMBox->recieveBlocked->pid;
     	mboxProcTable[blockedPID % MAXPROC].msgSize = msg_size;
-    	memcpy(MailBoxTable[mbox_id].recieveBlocked->message, msg_ptr, msg_size);
+    	memcpy(currMBox->recieveBlocked->message, msg_ptr, msg_size);
     	
+        // Unblock the receiveBlocked process
     	unblockProc(blockedPID);
     	return 0;
     }
     
     // Insert slot into mailbox
     asscociateSlotWithMailbox(mbox_id, nextSlot);
-    MailBoxTable[mbox_id].numSlotsUsed++;
+    currMBox->numSlotsUsed++;
     
     // Assign necessary values to slot
     memcpy(nextSlot->message, msg_ptr, msg_size);
@@ -282,6 +324,16 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
     return 0;
 } /* MboxSend */
 
+/* ------------------------------------------------------------------------
+ Name - insertProcessInSendBLockedList
+ Purpose    - Inserts a process into the send block list of a given mailbox
+ Parameters - int mBoxID: the index of the mailbox in the MailBoxTable
+            - mboxProcPtr procToAdd: a pointer to the location in the
+              ProcessTable which contains the process to add to the
+              mailBox's sendBlockedList
+ Returns    - nothing
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
 void insertProcessInSendBLockedList(int mBoxID, mboxProcPtr procToAdd) {
     if (MailBoxTable[mBoxID].sendBlocked == NULL) {
         MailBoxTable[mBoxID].sendBlocked = procToAdd;
@@ -293,12 +345,18 @@ void insertProcessInSendBLockedList(int mBoxID, mboxProcPtr procToAdd) {
     }
     walker->next = procToAdd;
     procToAdd->next = NULL;
-}
+} /* insertProcessInSendBLockedList */
 
-
-/*
- *
- */
+/* ------------------------------------------------------------------------
+ Name - asscociateSlotWithMailbox
+ Purpose    - Inserts a slot into the SlotList of a given mailbox
+ Parameters - int mBoxID: the index of the mailbox in the MailBoxTable
+            - slotPtr slotToInsert: a pointer to the location in the
+              SlotTable which contains the slot to add to the
+              mailBox's slotList
+ Returns    - nothing
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
 void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
     if (MailBoxTable[mboxID].firstSlotPtr == NULL) {
         MailBoxTable[mboxID].firstSlotPtr = slotToInsert;
@@ -312,7 +370,7 @@ void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
     
     walker->siblingSlotPtr = slotToInsert;
     slotToInsert->siblingSlotPtr = NULL;
-}
+} /* asscociateSlotWithMailbox */
 
 /* ------------------------------------------------------------------------
    Name - MboxReceive
@@ -340,40 +398,44 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         return -1;
     }
     
+    // Grab the loction of the MailBox at mbox_id
+    mBoxPtr currMBox = &MailBoxTable[mbox_id];
+    
     // There is no message in the mailbox, Current will need to block.
-    if (MailBoxTable[mbox_id].numSlotsUsed <= 0){
-    	//no mail to receive... block
-    	mboxProcTable[getpid() % MAXPROC].pid = getpid();
-    	mboxProcTable[getpid() % MAXPROC].message = msg_ptr;
-    	mboxProcTable[getpid() % MAXPROC].msgSize = msg_size;
+    if (currMBox->numSlotsUsed <= 0){
+        
+        // Add process to process table and initialize fields
+        int pid = getpid();
+        mboxProcTable[pid % MAXPROC].pid = pid;
+    	mboxProcTable[pid % MAXPROC].message = msg_ptr;
+    	mboxProcTable[pid % MAXPROC].msgSize = msg_size;
     	
-    	//add to mailbox recieve list
+    	// Add process to mailbox recieve blocked list
         // FIXME: Add to end of linked list of ReceiveBlockedProcesses
-    	MailBoxTable[mbox_id].recieveBlocked = &mboxProcTable[getpid() % MAXPROC];
+    	currMBox->recieveBlocked = &mboxProcTable[getpid() % MAXPROC];
     	
-    	//enableInterrupts();
+        // Block until a message is available
     	blockMe(REC_BLOCKED);
     	
-    	//check released / zapped after an unblockProc
-    	if (mboxProcTable[getpid() % MAXPROC].wasReleased == 1 || isZapped()){
+    	// Check if the process was unblocked on a releasing mailbox or was zapped after an unblockProc
+    	if (mboxProcTable[pid % MAXPROC].wasReleased == 1 || isZapped()){
     		enableInterrupts();
     		return -3;
     	}
     	
-    	//disableInterrupts();
-    	
-    	int receivedMessageSize = mboxProcTable[getpid() % MAXPROC].msgSize;
+        // Get size of the message from processTable
+    	int receivedMessageSize = mboxProcTable[pid % MAXPROC].msgSize;
         
-        // FIXME: Write method for nullifyProcessInProcTable
-    	mboxProcTable[getpid() % MAXPROC].pid = -1;
-    	mboxProcTable[getpid() % MAXPROC].msgSize = -1;
-    	//re-enable and return
+        // FIXME: I'm not certain this is correct. What if this process is waiting on multiple receives?
+        nullifyProc(pid % MAXPROC);
+        
+    	// Re-enable and return message size
     	enableInterrupts();
     	return receivedMessageSize;
     }
     
     // Get the slot which contains the message.
-    slotPtr slotToRemove =MailBoxTable[mbox_id].firstSlotPtr;
+    slotPtr slotToRemove = currMBox->firstSlotPtr;
     
     // Get message size
     int actualMessageSize = slotToRemove->actualMessageSize;
@@ -387,31 +449,33 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     memcpy(msg_ptr, slotToRemove->message, actualMessageSize);
     
     // Remove slot from mailbox (disassociate slot from mailbox), nullify slot, decrement numSlotsUsed.
-    MailBoxTable[mbox_id].firstSlotPtr = slotToRemove->siblingSlotPtr;
+    currMBox->firstSlotPtr = slotToRemove->siblingSlotPtr;
     nullifySlot(slotToRemove->slotID);
-    MailBoxTable[mbox_id].numSlotsUsed--;
+    currMBox->numSlotsUsed--;
     
-    // If there are messages waiting for a slot (there is a sendBlock on this mailbox), give it a slot.
-    if (MailBoxTable[mbox_id].sendBlocked != NULL) {
+    // If there are messages waiting for a slot (there is a sendBlock on this mailbox), give the first a slot.
+    if (currMBox->sendBlocked != NULL) {
         
         // Get first sendBlocked Process and remove it from sendBlockedList
-        mboxProcPtr procToAdd = MailBoxTable[mbox_id].sendBlocked;
-        MailBoxTable[mbox_id].sendBlocked = MailBoxTable[mbox_id].sendBlocked->next;
+        mboxProcPtr procToAdd = currMBox->sendBlocked;
+        currMBox->sendBlocked = currMBox->sendBlocked->next;
         
         // Get a slot for new process, copy message from process to slot.
         slotPtr nextSlot = getAvailableSlot();
         memcpy(nextSlot->message, procToAdd->message, procToAdd->msgSize);
         nextSlot->actualMessageSize = procToAdd->msgSize;
+        
         // FIXME: Do we need to nullify procToAdd->next?
         
         // Add the slot to the mailbox
         asscociateSlotWithMailbox(mbox_id, nextSlot);
-        MailBoxTable[mbox_id].numSlotsUsed++;
+        currMBox->numSlotsUsed++;
         
         // FIXME: Nullify entry in processTable. Do we need that?
         unblockProc(procToAdd->pid);
     }
     
+    // Enable interrupts and return the received message size
     enableInterrupts();
     return actualMessageSize;
 } /* MboxReceive */
@@ -465,6 +529,14 @@ void disableInterrupts() {
 // FIXME: DOCUMENTATION
 void enableInterrupts(){}
 
+/* ------------------------------------------------------------------------
+ Name - getAvailableSlot
+ Purpose    - Finds the first available slot in the slot table
+ Parameters - none
+ Returns    - A pointer to the first available slot in the SlotTable.
+            - NULL if there is no available slot.
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 slotPtr getAvailableSlot() {
     // Find and return a pointer to the first available slot
     for (int i = 0; i < MAXSLOTS; i++) {
@@ -474,9 +546,19 @@ slotPtr getAvailableSlot() {
         }
     }
     return NULL;
-}
+} /* getAvailableSlot */
 
-int MboxRelease(int mailboxID){
+/* ------------------------------------------------------------------------
+ Name - MboxRelease
+ Purpose    - Responsibly destroys a given mailbox
+ Parameters - int mailboxID: the index of the mailbox to destroy
+ Returns    - -3 If the process was zapped while releasing th mailbox
+            - -1 If the mailbox in the MailBoxTable at mailboxID
+                 is an illegal target.
+            - 0  If the mailbox is release properly
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+int MboxRelease(int mailboxID) {
 	disableInterrupts();
 	check_kernel_mode("MboxRelease");
 	
@@ -492,45 +574,65 @@ int MboxRelease(int mailboxID){
         return -1;
     }
     
-    if (MailBoxTable[mailboxID].sendBlocked == NULL && 
-        MailBoxTable[mailboxID].recieveBlocked == NULL ){
+    // Grab the loction of the MailBox at mailboxID
+    mBoxPtr currMBox = &MailBoxTable[mailboxID];
+    
+    // If there are no processes blocked on the given mailbox.
+    if (currMBox->sendBlocked == NULL &&
+        currMBox->recieveBlocked == NULL ){
         
-        //slots
-        if (MailBoxTable[mailboxID].firstSlotPtr){
-        	clearAllSlots(MailBoxTable[mailboxID].firstSlotPtr);
+        // If the mailbox has slots, clear them
+        if (currMBox->firstSlotPtr != NULL){
+        	clearAllSlots(currMBox->firstSlotPtr);
         }
         
-        //rest of mbox cleared
+        // Clear the rest of the fields in the mailbox
         nullifyMailBox(mailboxID);
         
         enableInterrupts();
         //TODO check a isZapped call from entry to MboxRelease
-        if (isZapped()) return -3;
+        if (isZapped()) {
+            return -3;
+        }
         return 0;
     }
     
-	while(MailBoxTable[mailboxID].sendBlocked != NULL){
-		MailBoxTable[mailboxID].sendBlocked->wasReleased = 1;
-		int tempPid = MailBoxTable[mailboxID].sendBlocked->pid;
-		MailBoxTable[mailboxID].sendBlocked = MailBoxTable[mailboxID].sendBlocked->next;
+    // Reactivate and terminate all processes on mailbox sendBlockedList
+	while(currMBox->sendBlocked != NULL){
+        // Set the "released on mailbox" flag to true
+		currMBox->sendBlocked->wasReleased = 1;
+        
+        // Grab the pid of the prcess which is being unblocked.
+        // Remove the process from the sendBlockList of Mailbox and unblock it so it may finish.
+		int tempPid = currMBox->sendBlocked->pid;
+		currMBox->sendBlocked = currMBox->sendBlocked->next;
 		unblockProc(tempPid);
+        
+        // Disable interrupts when returning to this function.
 		disableInterrupts();
 	}
 	
-	while(MailBoxTable[mailboxID].recieveBlocked != NULL){
-		MailBoxTable[mailboxID].recieveBlocked->wasReleased = 1;
-		int tempPid = MailBoxTable[mailboxID].recieveBlocked->pid;
-		MailBoxTable[mailboxID].recieveBlocked = MailBoxTable[mailboxID].recieveBlocked->next;
+    // Reactivate and terminate all processes on mailbox receiveBlockedList
+	while(currMBox->recieveBlocked != NULL){
+        // Set the "released on mailbox" flag to true
+		currMBox->recieveBlocked->wasReleased = 1;
+        
+        // Grab the pid of the prcess which is being unblocked.
+        // Remove the process from the sendBlockList of Mailbox and unblock it so it may finish.
+		int tempPid = currMBox->recieveBlocked->pid;
+		currMBox->recieveBlocked = currMBox->recieveBlocked->next;
 		unblockProc(tempPid);
+        
+        // Disable interrupts when returning to this function.
 		disableInterrupts();
 	}
 	
-	//clear slots
-    if (MailBoxTable[mailboxID].firstSlotPtr){
-        clearAllSlots(MailBoxTable[mailboxID].firstSlotPtr);
+	// If mailbox has slots, nullify them
+    if (currMBox->firstSlotPtr != NULL){
+        clearAllSlots(currMBox->firstSlotPtr);
     }
         
-    //rest of mbox cleared
+    // Nullify remaining fields in mailbox.
     nullifyMailBox(mailboxID);
         
     enableInterrupts(); 
@@ -539,9 +641,15 @@ int MboxRelease(int mailboxID){
     if (isZapped()) return -3;
     
     return 0;
-    
-}
+} /* MboxRelease */
 
+/* ------------------------------------------------------------------------
+ Name - clearAllSlots
+ Purpose    - Clears all slots in the linked list starting at the give slot
+ Parameters - slotPtr slotToClear: the index of the mailbox to destroy
+ Returns    - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void clearAllSlots(slotPtr slotToClear){
 	slotPtr temp = slotToClear;
 	while(slotToClear->siblingSlotPtr != NULL){
@@ -550,6 +658,4 @@ void clearAllSlots(slotPtr slotToClear){
 		temp = slotToClear;
 	}
 	nullifySlot(temp->slotID);
-}
-
-
+} /* clearAllSlots */
