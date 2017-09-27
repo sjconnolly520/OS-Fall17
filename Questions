@@ -1,7 +1,8 @@
 
 TODO:
-            Nullify SlotTable
 
 Questions:
+            
             What does Phase2ProcTable do? When do we add to it?
             Do we need to ensure that the message is of given size (MboxSend())?
+
