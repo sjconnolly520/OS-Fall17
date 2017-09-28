@@ -22,7 +22,8 @@ void nullifyMailBox(int);
 void nullifySlot(int);
 void nullifyProc(int);
 void check_kernel_mode(char *);
-void insertProcessInSendBLockedList(int, mboxProcPtr);
+void insertProcessInSendBlockedList(int, mboxProcPtr);
+void insertProcessInReceiveBlockedList(int, mboxProcPtr);
 void asscociateSlotWithMailbox(int, slotPtr);
 void disableInterrupts(void);
 void enableInterrupts(void);
@@ -30,6 +31,10 @@ void initializeInterrupts(void);
 slotPtr getAvailableSlot(void);
 int MboxRelease(int);
 void clearAllSlots(slotPtr);
+int MboxCondSend(int, void *, int );
+int MboxCondSend(int, void *, int );
+int waitDevice(int, int, int *);
+int check_io(void);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -48,6 +53,7 @@ mboxProc mboxProcTable[50];
 
 // array of function ptrs to system call
 // handlers, ...
+int clockHandlerCount = 0;
 
 
 
@@ -77,13 +83,13 @@ int start1(char *arg) {
     // Initialize the mail box table
     for (int i = 0; i < MAXMBOX; i++) {
         
-        // FIXME: --- First 7 mailboxes will be assigned to interrupt handlers
-        if (i < 7) {
-            continue;
-        }
-        
         nullifyMailBox(i);
         MailBoxTable[i].mid = i;
+        
+        // Create first seven boxes for interrupt handlers
+        if (i < 7) {
+            MboxCreate(0, 0);
+        }
     }
     
     // Initialize slotTable
@@ -274,7 +280,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
     mBoxPtr currMBox = &MailBoxTable[mbox_id];
     
     // If there are no available slots in Mailbox, Current sendBlocks
-    if (currMBox->numSlotsUsed >= currMBox->numSlots) {
+    if (currMBox->numSlotsUsed >= currMBox->numSlots && currMBox->recieveBlocked == NULL) {
         
         // Add process to process table and initialize fields
         int pid = getpid();
@@ -283,7 +289,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
         mboxProcTable[pid % MAXPROC].message = msg_ptr;
         
         // Insert Current process into Mailbox's sendBlockList.
-        insertProcessInSendBLockedList(mbox_id, &mboxProcTable[pid % MAXPROC]);
+        insertProcessInSendBlockedList(mbox_id, &mboxProcTable[pid % MAXPROC]);
         
         // Block until there is space to send to
         blockMe(SEND_BLOCKED);
@@ -325,54 +331,6 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
 } /* MboxSend */
 
 /* ------------------------------------------------------------------------
- Name - insertProcessInSendBLockedList
- Purpose    - Inserts a process into the send block list of a given mailbox
- Parameters - int mBoxID: the index of the mailbox in the MailBoxTable
-            - mboxProcPtr procToAdd: a pointer to the location in the
-              ProcessTable which contains the process to add to the
-              mailBox's sendBlockedList
- Returns    - nothing
- Side Effects - none.
- ----------------------------------------------------------------------- */
-void insertProcessInSendBLockedList(int mBoxID, mboxProcPtr procToAdd) {
-    if (MailBoxTable[mBoxID].sendBlocked == NULL) {
-        MailBoxTable[mBoxID].sendBlocked = procToAdd;
-        return;
-    }
-    mboxProcPtr walker = MailBoxTable[mBoxID].sendBlocked;
-    while (walker->next != NULL) {
-        walker = walker->next;
-    }
-    walker->next = procToAdd;
-    procToAdd->next = NULL;
-} /* insertProcessInSendBLockedList */
-
-/* ------------------------------------------------------------------------
- Name - asscociateSlotWithMailbox
- Purpose    - Inserts a slot into the SlotList of a given mailbox
- Parameters - int mBoxID: the index of the mailbox in the MailBoxTable
-            - slotPtr slotToInsert: a pointer to the location in the
-              SlotTable which contains the slot to add to the
-              mailBox's slotList
- Returns    - nothing
- Side Effects - none.
- ----------------------------------------------------------------------- */
-void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
-    if (MailBoxTable[mboxID].firstSlotPtr == NULL) {
-        MailBoxTable[mboxID].firstSlotPtr = slotToInsert;
-        return;
-    }
-    
-    slotPtr walker = MailBoxTable[mboxID].firstSlotPtr;
-    while (walker->siblingSlotPtr != NULL) {
-        walker = walker->siblingSlotPtr;
-    }
-    
-    walker->siblingSlotPtr = slotToInsert;
-    slotToInsert->siblingSlotPtr = NULL;
-} /* asscociateSlotWithMailbox */
-
-/* ------------------------------------------------------------------------
    Name - MboxReceive
    Purpose - Get a msg from a slot of the indicated mailbox.
              Block the receiving process if no msg available.
@@ -384,7 +342,7 @@ void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
 int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     
     check_kernel_mode("MboxReceive()");
-    
+    disableInterrupts();
     //disable interrupts
     
     // If mbox_id > MAXMBOX OR mbox_id < 0
@@ -401,6 +359,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     // Grab the loction of the MailBox at mbox_id
     mBoxPtr currMBox = &MailBoxTable[mbox_id];
     
+    
     // There is no message in the mailbox, Current will need to block.
     if (currMBox->numSlotsUsed <= 0){
         
@@ -411,8 +370,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     	mboxProcTable[pid % MAXPROC].msgSize = msg_size;
     	
     	// Add process to mailbox recieve blocked list
-        // FIXME: Add to end of linked list of ReceiveBlockedProcesses
-    	currMBox->recieveBlocked = &mboxProcTable[getpid() % MAXPROC];
+        insertProcessInReceiveBlockedList(mbox_id, &mboxProcTable[pid % MAXPROC]);
     	
         // Block until a message is available
     	blockMe(REC_BLOCKED);
@@ -480,6 +438,303 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     return actualMessageSize;
 } /* MboxReceive */
 
+int MboxCondSend(int mailboxID, void *message, int messageSize) {
+    
+    // Check if in kernel mode
+    check_kernel_mode("MBoxSend()");
+    // DisableInterrupts
+    disableInterrupts();
+    
+    // if processes was zapped
+    if (isZapped()) {
+        enableInterrupts();
+        return -3;
+    }
+    
+    // Error checking for parameters
+    // If mbox_id is out of bounds
+    if (mailboxID > MAXMBOX || mailboxID < 0) {
+        enableInterrupts();
+        return -1;
+    }
+    // If mailbox doesn't exits
+    if (MailBoxTable[mailboxID].status == EMPTY) {
+        enableInterrupts();
+        return -1;
+    }
+    // If msg_size > MailBox.maxSlotSize OR msg_size < 0
+    if (messageSize > MailBoxTable[mailboxID].slotSize || messageSize < 0) {
+        enableInterrupts();
+        return -1;
+    }
+    
+    // Find a slot for the new message
+    slotPtr nextSlot = getAvailableSlot();
+    
+    // No available slot in slotTable
+    if (nextSlot == NULL) {
+        return -2;
+    }
+    
+    // Grab the loction of the MailBox at mbox_id
+    mBoxPtr currMBox = &MailBoxTable[mailboxID];
+    
+    // If there are no available slots in Mailbox
+    if (currMBox->numSlotsUsed >= currMBox->numSlots&& currMBox->recieveBlocked == NULL) {
+        enableInterrupts();
+        return -2;
+    }
+    
+    // If there is a process receiveBlocked on this mailbox (there is a process waiting for a message), write directly to it.
+    else if (currMBox->recieveBlocked != NULL){
+        
+        // Grab the pid of the first receiveBlocked process
+        // Copy the message from Current directly to the receiveBlocked process
+        int blockedPID = currMBox->recieveBlocked->pid;
+        mboxProcTable[blockedPID % MAXPROC].msgSize = messageSize;
+        memcpy(currMBox->recieveBlocked->message, message, messageSize);
+        
+        // Unblock the receiveBlocked process
+        unblockProc(blockedPID);
+        return 0;
+    }
+    
+    // Insert slot into mailbox
+    asscociateSlotWithMailbox(mailboxID, nextSlot);
+    currMBox->numSlotsUsed++;
+    
+    // Assign necessary values to slot
+    memcpy(nextSlot->message, message, messageSize);
+    nextSlot->actualMessageSize = messageSize;
+    
+    // Message successfully sent
+    enableInterrupts();
+    return 0;
+} /* MboxCodSend */
+
+// FIXME: Insert Block comment
+int MboxCondReceive(int mailboxID, void *message, int maxMessageSize){
+    check_kernel_mode("MboxReceive()");
+    disableInterrupts();
+    //disable interrupts
+    
+    // If calling process; FIXME: What is the story with zapped on condReceive? This line might not be here.
+    if (isZapped()) {
+        enableInterrupts();
+        return -2;
+    }
+    
+    // If mbox_id > MAXMBOX OR mbox_id < 0
+    if (mailboxID > MAXMBOX || mailboxID < 0) {
+        enableInterrupts();
+        return -1;
+    }
+    // If mailbox doesn't exits
+    if (MailBoxTable[mailboxID].status == EMPTY) {
+        enableInterrupts();
+        return -1;
+    }
+    
+    // Grab the loction of the MailBox at mbox_id
+    mBoxPtr currMBox = &MailBoxTable[mailboxID];
+    
+    // There is no message in the mailbox, Current will need to block.
+    if (currMBox->numSlotsUsed <= 0){
+        return -2;
+    }
+    
+    // Get the slot which contains the message.
+    slotPtr slotToRemove = currMBox->firstSlotPtr;
+    
+    // Get message size
+    int actualMessageSize = slotToRemove->actualMessageSize;
+    // Check to make sure message is not greater than buffer
+    if (actualMessageSize > maxMessageSize) {
+        enableInterrupts();
+        return -1;
+    }
+    
+    // Copy message to process from slot.
+    memcpy(message, slotToRemove->message, actualMessageSize);
+    
+    // Remove slot from mailbox (disassociate slot from mailbox), nullify slot, decrement numSlotsUsed.
+    currMBox->firstSlotPtr = slotToRemove->siblingSlotPtr;
+    nullifySlot(slotToRemove->slotID);
+    currMBox->numSlotsUsed--;
+    
+    // If there are messages waiting for a slot (there is a sendBlock on this mailbox), give the first a slot.
+    if (currMBox->sendBlocked != NULL) {
+        
+        // Get first sendBlocked Process and remove it from sendBlockedList
+        mboxProcPtr procToAdd = currMBox->sendBlocked;
+        currMBox->sendBlocked = currMBox->sendBlocked->next;
+        
+        // Get a slot for new process, copy message from process to slot.
+        slotPtr nextSlot = getAvailableSlot();
+        memcpy(nextSlot->message, procToAdd->message, procToAdd->msgSize);
+        nextSlot->actualMessageSize = procToAdd->msgSize;
+        
+        // FIXME: Do we need to nullify procToAdd->next?
+        
+        // Add the slot to the mailbox
+        asscociateSlotWithMailbox(mailboxID, nextSlot);
+        currMBox->numSlotsUsed++;
+        
+        // FIXME: Nullify entry in processTable. Do we need that?
+        unblockProc(procToAdd->pid);
+    }
+    
+    // Enable interrupts and return the received message size
+    enableInterrupts();
+    return actualMessageSize;
+} /* MboxCondReceive */
+
+/*
+ * waitDevice     FIXME: Block comment
+ */
+int waitDevice(int type, int unit, int *status){
+    
+    int mailboxID = -404;          // the index of the i/o mailbox
+    int clockID = 0;              // index of the clock i/o mailbox
+    int diskID[] = {1, 2};        // indexes of the disk i/o mailboxes
+    int termID[] = {3, 4, 5, 6};  // indexes of the terminal i/o mailboxes
+    printf("I'm in waitDevice, Dickhead");
+    // Determine the index of the i/o mailbox for the given device type and unit
+    switch (type) {
+        case USLOSS_CLOCK_INT:
+            mailboxID = clockID;
+            break;
+            
+        case USLOSS_DISK_INT:
+            if (unit < 0 || unit >  1) {
+                USLOSS_Console("ERROR: waitDevice(): Invalid diskDevice Unit. Halting\n");
+                USLOSS_Halt(1);
+            }
+            mailboxID = diskID[unit];
+            break;
+            
+        case USLOSS_TERM_INT:
+            if (unit < 0 || unit >  3) {
+                USLOSS_Console("ERROR: waitDevice(): Invalid Terminal unit. Halting...\n");
+                USLOSS_Halt(1);
+            }
+            mailboxID = termID[unit];
+            break;
+            
+        default:
+            USLOSS_Console("ERROR: waitDevice(): Invalid parameter. Halting...\n");
+            USLOSS_Halt(1);
+    }
+    
+    // Wait for status of device to be returned from handler
+    int returnCode = MboxReceive(mailboxID, status, sizeof(int));
+    
+    // If zapped
+    if (returnCode == -3) {
+        return -1;
+    }
+    return 0;
+} /* waitDevice */
+
+void clockHandler2(int dev, int unit) {
+    
+    check_kernel_mode("clockHandler2()");
+    dispatcher();
+    
+    // Check if device is actually the clock handler AND unit is valid
+    if (dev != USLOSS_CLOCK_INT || unit != 0) {
+        USLOSS_Console("ERROR: clockHandler2(): Invalid parameters. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    int status;
+    
+    clockHandlerCount++;
+    if (clockHandlerCount >= 5) {
+        clockHandlerCount = 0;
+        if (USLOSS_DeviceInput(USLOSS_CLOCK_INT, 0, &status) == USLOSS_DEV_INVALID) {
+            USLOSS_Console("ERROR: getCurrentTime(): Encountered error fetching current time. Halting.\n");
+            USLOSS_Halt(1);
+        }
+        MboxCondSend(unit, &status, sizeof(int));
+    }
+    
+    timeSlice();
+    enableInterrupts();
+}
+
+/* ------------------------------------------------------------------------
+ Name - insertProcessInSendBLockedList
+ Purpose     - Inserts a process into the send block list of a given mailbox
+ Parameters  - int mBoxID: the index of the mailbox in the MailBoxTable
+             - mboxProcPtr procToAdd: a pointer to the location in the
+               ProcessTable which contains the process to add to the
+               mailBox's sendBlockedList
+ Returns     - nothing
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
+void insertProcessInSendBlockedList(int mBoxID, mboxProcPtr procToAdd) {
+    if (MailBoxTable[mBoxID].sendBlocked == NULL) {
+        MailBoxTable[mBoxID].sendBlocked = procToAdd;
+        return;
+    }
+    mboxProcPtr walker = MailBoxTable[mBoxID].sendBlocked;
+    while (walker->next != NULL) {
+        walker = walker->next;
+    }
+    walker->next = procToAdd;
+    procToAdd->next = NULL;
+} /* insertProcessInSendBLockedList */
+
+// FIXME: Edit block comment
+/* ------------------------------------------------------------------------
+ Name - insertProcessInReceiveBLockedList
+ Purpose     - Inserts a process into the send block list of a given mailbox
+ Parameters  - int mBoxID: the index of the mailbox in the MailBoxTable
+             - mboxProcPtr procToAdd: a pointer to the location in the
+               ProcessTable which contains the process to add to the
+               mailBox's sendBlockedList
+ Returns     - nothing
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
+void insertProcessInReceiveBlockedList(int mBoxID, mboxProcPtr procToAdd) {
+    if (MailBoxTable[mBoxID].recieveBlocked == NULL) {
+        MailBoxTable[mBoxID].recieveBlocked = procToAdd;
+        return;
+    }
+    mboxProcPtr walker = MailBoxTable[mBoxID].recieveBlocked;
+    while (walker->next != NULL) {
+        walker = walker->next;
+    }
+    walker->next = procToAdd;
+    procToAdd->next = NULL;
+} /* insertProcessInReceiveBLockedList */
+
+/* ------------------------------------------------------------------------
+ Name - asscociateSlotWithMailbox
+ Purpose     - Inserts a slot into the SlotList of a given mailbox
+ Parameters  - int mBoxID: the index of the mailbox in the MailBoxTable
+             - slotPtr slotToInsert: a pointer to the location in the
+               SlotTable which contains the slot to add to the
+               mailBox's slotList
+ Returns     - nothing
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
+void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
+    if (MailBoxTable[mboxID].firstSlotPtr == NULL) {
+        MailBoxTable[mboxID].firstSlotPtr = slotToInsert;
+        return;
+    }
+    
+    slotPtr walker = MailBoxTable[mboxID].firstSlotPtr;
+    while (walker->siblingSlotPtr != NULL) {
+        walker = walker->siblingSlotPtr;
+    }
+    
+    walker->siblingSlotPtr = slotToInsert;
+    slotToInsert->siblingSlotPtr = NULL;
+} /* asscociateSlotWithMailbox */
+
 // FIXME: Edit block comment
 /* ------------------------------------------------------------------------
  Name - check_kernel_mode
@@ -505,10 +760,11 @@ void check_kernel_mode(char * procName) {
  Side Effects - none
  ----------------------------------------------------------------------- */
 void initializeInterrupts() {
-    //USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;
-    //USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalArgumentHandler;
+//    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = (void*)illegalArgumentHandler;
+    USLOSS_IntVec[USLOSS_CLOCK_INT] = (void*)clockHandler2;
+//    USLOSS_IntVec[USLOSS_DISK_INT] = (void*)diskHandler;
+//    USLOSS_IntVec[USLOSS_TERM_INT] = (void*)termHandler;
 } /* initializeInterrupts */
-
 
 /* ------------------------------------------------------------------------
  Name - disableInterrupts
@@ -522,12 +778,17 @@ void disableInterrupts() {
     
     if (USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR){
         USLOSS_Console("ERROR: disableInterrupts(): Failed to disable interrupts.\n");
+        USLOSS_Halt(1);
     }
     return;
 } /* disableInterrupts */
 
 // FIXME: DOCUMENTATION
-void enableInterrupts(){}
+void enableInterrupts(){
+    if (USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR) {
+        USLOSS_Console("ERROR: enableInterrupts(): Failed to enable interrupts.\n");
+    }
+}
 
 /* ------------------------------------------------------------------------
  Name - getAvailableSlot
@@ -659,3 +920,14 @@ void clearAllSlots(slotPtr slotToClear){
 	}
 	nullifySlot(temp->slotID);
 } /* clearAllSlots */
+
+
+/* check_io checks if any processes are receiveBlocked on one of the io_mailboxes*/ // FIXME: Block Comment
+int check_io() {
+    for (int i = 0; i < 7; i++) {
+        if (MailBoxTable[i].recieveBlocked != NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
