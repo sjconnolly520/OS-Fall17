@@ -1,11 +1,12 @@
 
 #define DEBUG2 1
 
-typedef struct mailSlot *slotPtr;
-typedef struct mailbox   mailbox;
-typedef struct mailSlot  mailSlot;
-typedef struct mboxProc *mboxProcPtr;
-typedef struct mboxProc  mboxProc;
+typedef struct mailSlot * slotPtr;
+typedef struct mailbox    mailbox;
+typedef struct mailbox *  mBoxPtr;
+typedef struct mailSlot   mailSlot;
+typedef struct mboxProc * mboxProcPtr;
+typedef struct mboxProc   mboxProc;
 struct mailbox {
     int         mid;
     // other items as needed...
