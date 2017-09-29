@@ -36,6 +36,10 @@ int MboxCondSend(int, void *, int );
 int waitDevice(int, int, int *);
 int check_io(void);
 int isZeroSlotMailBox(int);
+void clockHandler2(int, void*);
+void diskHandler(int, void*);
+void terminalHandler(int, void*);
+void systemCallHandler(int, void*);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -810,6 +814,17 @@ void terminalHandler(int dev, void *args) {
 } /* terminalHandler */
 
 /* ------------------------------------------------------------------------
+ Name - syscallHandler
+ Purpose - called when interrupt vector is activated for this device
+ Parameters - device, unit
+ Returns - void
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void systemCallHandler(int dev, void *unit) {
+    
+}
+
+/* ------------------------------------------------------------------------
  Name - insertProcessInSendBLockedList
  Purpose     - Inserts a process into the send block list of a given mailbox
  Parameters  - int mBoxID: the index of the mailbox in the MailBoxTable
@@ -910,6 +925,7 @@ void initializeInterrupts() {
     USLOSS_IntVec[USLOSS_CLOCK_INT] = (void*)clockHandler2;
     USLOSS_IntVec[USLOSS_DISK_INT] = (void*)diskHandler;
     USLOSS_IntVec[USLOSS_TERM_INT] = (void*)terminalHandler;
+    USLOSS_IntVec[USLOSS_SYSCALL_INT] = (void*)systemCallHandler;
 } /* initializeInterrupts */
 
 /* ------------------------------------------------------------------------
