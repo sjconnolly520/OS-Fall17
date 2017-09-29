@@ -10,6 +10,11 @@ resultsdir="testResults/"
 myresultsdir="myResults/"
 
 
+make $1 &> /dev/null
+eval ./$1 &> $myresultsdir$1$fname$fext
+diffresults="$(diff $resultsdir$1$fext $myresultsdir$1$fname$fext)"
+diffsize=${#diffresults}
+
 diffresults="$(diff $resultsdir$1$fext $myresultsdir$1$fname$fext)"
 diffsize=${#diffresults}
 
