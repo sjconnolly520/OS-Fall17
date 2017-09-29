@@ -15,6 +15,7 @@ rm diffOutputs/* &> /dev/null
 mkdir myResults &> /dev/null
 mkdir diffOutputs &> /dev/null
 
+cp testcases/term* .
 
 count=0
 
