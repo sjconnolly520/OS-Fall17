@@ -387,7 +387,6 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         // Get size of the message from processTable
     	int receivedMessageSize = mboxProcTable[pid % MAXPROC].msgSize;
         
-        // FIXME: I'm not certain this is correct. What if this process is waiting on multiple receives?
         nullifyProc(pid % MAXPROC);
         
     	// Re-enable and return message size
@@ -426,8 +425,6 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         memcpy(nextSlot->message, procToAdd->message, procToAdd->msgSize);
         nextSlot->actualMessageSize = procToAdd->msgSize;
         
-        // FIXME: Do we need to nullify procToAdd->next?
-        
         // Add the slot to the mailbox
         asscociateSlotWithMailbox(mbox_id, nextSlot);
         currMBox->numSlotsUsed++;
@@ -441,7 +438,17 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     return actualMessageSize;
 } /* MboxReceive */
 
-// FIXME: Block comment
+/* ------------------------------------------------------------------------
+ Name - MboxCondSend
+ Purpose    - Sends a message to the given mailbox, but does not block
+              if the mailbox is full
+ Parameters - int mailboxID: the index of the MailBox to send to
+            - void * message: the address of the message to send
+            - int messageSize: the size of the message to send
+ Returns    - Returns true (1) if the mailbox indicated is zeroSlot
+ - Returns false (0) otherwise
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
 int MboxCondSend(int mailboxID, void *message, int messageSize) {
     
     // Check if in kernel mode
@@ -484,14 +491,6 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
     // Grab the loction of the MailBox at mbox_id
     mBoxPtr currMBox = &MailBoxTable[mailboxID];
     
-//    if (currMBox->recieveBlocked == NULL){
-//        USLOSS_Console("ReceiveBlocked is null, Dunce. \n");
-//    }
-//    
-//    if (currMBox->recieveBlocked != NULL){
-//        USLOSS_Console("ReceiveBlocked is not null, Dunce. \n");
-//    }
-    
     // If there are no available slots in Mailbox
     if (currMBox->numSlotsUsed >= currMBox->numSlots && currMBox->recieveBlocked == NULL) {
         enableInterrupts();
@@ -525,7 +524,7 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
     // Message successfully sent
     enableInterrupts();
     return 0;
-} /* MboxCodSend */
+} /* MboxCondSend */
 
 /* ------------------------------------------------------------------------
  Name - MboxCondReceive
@@ -611,12 +610,12 @@ int MboxCondReceive(int mailboxID, void *message, int maxMessageSize){
     return actualMessageSize;
 } /* MboxCondReceive */
 
-/* ------------------------------------------------------------------------ FIXME
+/* ------------------------------------------------------------------------
  Name - isZeroSlotMailBox
- Purpose    - Returns true if the mailbox indicated is zeroSlot
- Parameters - mailbox id, pointer to put data of msg, max # of bytes that
- can be received.
- Returns - actual size of msg if successful, -1 if invalid args.
+ Purpose    - Determines if a given mailbox has zeroSlot
+ Parameters - int mailboxID: the index of the MailBox in question
+ Returns    - Returns true (1) if the mailbox indicated is zeroSlot
+            - Returns false (0) otherwise
  Side Effects - none.
  ----------------------------------------------------------------------- */
 int isZeroSlotMailBox(int mailBoxID) {
@@ -626,9 +625,16 @@ int isZeroSlotMailBox(int mailBoxID) {
     return 0;
 } /* isZeroSlotMailBox */
 
-/*
- * waitDevice     FIXME: Block comment
- */
+/* ------------------------------------------------------------------------
+ Name - waitDevice
+ Purpose    - Determines which IODevice MailBox process will hold on.
+ Parameters - int type: the type of interrupt device to block on
+            - int unit: the index of the interrupt to block on
+            - int * status: the time at which the processes unblocked.
+ Returns    - int -1 if process was zapped
+                   0 otherwise
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
 int waitDevice(int type, int unit, int *status){
     
     int mailboxID = -404;         // the index of the i/o mailbox
@@ -673,20 +679,28 @@ int waitDevice(int type, int unit, int *status){
     return 0;
 } /* waitDevice */
 
-
-// FIXME: Documentation
-void clockHandler2(int dev, int mboxID) {
+/* ------------------------------------------------------------------------
+Name        - clockHandler2
+Purpose     - Handles the logic of releasing a blocked process on the clockDevice mailbox.
+Parameters  - int dev: the type of device needed // FIXME: do we actually need this variable?
+            - int mboxID: the index in the MailBoxTable of the ClockDevice
+              mailbox to block on.
+Returns     - nothing
+Side Effects - none
+----------------------------------------------------------------------- */
+void clockHandler2(int dev, int unit) {
     
     check_kernel_mode("clockHandler2()");
     disableInterrupts();
     
     // Check if device is actually the clock handler AND unit is valid
-    if (dev != USLOSS_CLOCK_INT || mboxID != 0) {
+    if (dev != USLOSS_CLOCK_INT || unit != 0) {
         USLOSS_Console("ERROR: clockHandler2(): Invalid parameters. Halting...\n");
         USLOSS_Halt(1);
     }
     
-    int status;                     // Initialize field to contain return value
+    int mboxID = unit;
+    int status;                     // Initialize field to contain time at moment of read
     clockHandlerCount++;            // Increment how often this function has been called.
     
     // If this is the fifth time this function has been called
@@ -694,7 +708,7 @@ void clockHandler2(int dev, int mboxID) {
         clockHandlerCount = 0;              // Reset count
         // Fetch status from DeviceInput
         if (USLOSS_DeviceInput(USLOSS_CLOCK_INT, 0, &status) == USLOSS_DEV_INVALID) {
-            USLOSS_Console("ERROR: getCurrentTime(): Encountered error fetching current time. Halting.\n");
+            USLOSS_Console("ERROR: clockHandler2(): Encountered error fetching current time. Halting.\n");
             USLOSS_Halt(1);
         }
         // Make a call to unblock the process that is receiveBlocked on the device mailbox
@@ -704,7 +718,68 @@ void clockHandler2(int dev, int mboxID) {
     // Call dispatcher and stuff, I guess.
     timeSlice();
     enableInterrupts();
-}
+} /* clockHandler2 */
+
+/* ------------------------------------------------------------------------
+ Name       - diskHandler
+ Purpose    - called when interrupt vector is activated for this device
+ Parameters - int dev: device type
+            - int unit: index in device type array
+ Returns    - void
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void diskHandler(int dev, int unit) {
+    check_kernel_mode("diskHandler");
+    disableInterrupts();
+    
+    // Check if device is actually the disk handler AND unit is valid
+    if (dev != USLOSS_DISK_INT || unit < 0 || unit > 1) {
+        USLOSS_Console("ERROR: diskHandler(): wrong device or unit. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    int status;                     // Initialize field to contain time at moment of read
+    int mBoxID = unit + 1;          // Determine the mailbox index.
+    
+    // Fetch status from DeviceInput
+    if (USLOSS_DeviceInput(USLOSS_DISK_INT, unit, &status) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: clockHandler2(): Encountered error fetching current time. Halting.\n");
+        USLOSS_Halt(1);
+    }
+    MboxCondSend(mBoxID, &status, sizeof(int));
+    enableInterrupts();
+} /* diskHandler */
+
+/* ------------------------------------------------------------------------
+ Name       - terminalHandler
+ Purpose    - called when interrupt vector is activated for this device
+ Parameters - int dev: device type
+            - int unit: index in device type array
+ Returns    - void
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void terminalHandler(int dev, int unit) {
+    check_kernel_mode("termHandler");
+    disableInterrupts();
+    
+    // Check if device is actually the disk handler AND unit is valid
+    if (dev != USLOSS_TERM_INT || unit < 0 || unit > 3) {
+        USLOSS_Console("termHandler(): wrong device or unit\n");
+        USLOSS_Halt(1);
+    }
+    
+    int status;                     // Initialize field to contain time at moment of read
+    int mBoxID = unit + 3;          // Determine the mailbox index.
+    
+    // Fetch status from DeviceInput
+    if (USLOSS_DeviceInput(USLOSS_TERM_INT, unit, &status) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: clockHandler2(): Encountered error fetching current time. Halting.\n");
+        USLOSS_Halt(1);
+    }
+    
+    MboxCondSend(mBoxID, &status, sizeof(int));
+    enableInterrupts();
+} /* terminalHandler */
 
 /* ------------------------------------------------------------------------
  Name - insertProcessInSendBLockedList
@@ -729,7 +804,6 @@ void insertProcessInSendBlockedList(int mBoxID, mboxProcPtr procToAdd) {
     procToAdd->next = NULL;
 } /* insertProcessInSendBLockedList */
 
-// FIXME: Edit block comment
 /* ------------------------------------------------------------------------
  Name - insertProcessInReceiveBLockedList
  Purpose     - Inserts a process into the send block list of a given mailbox
@@ -781,10 +855,11 @@ void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
 // FIXME: Edit block comment
 /* ------------------------------------------------------------------------
  Name - check_kernel_mode
- Purpose - Checks the current OS mode.
- Parameters - none
- Returns - Returns 0 if in kernel mode,
- !0 if in user mode.
+ Purpose    - Checks the current OS mode.
+            - Thows an error if USLOSS is passed an invalid PSR
+ Parameters - char * procName: the name of the process calling the function
+              (or more likely, the function).
+ Returns    - nothing
  Side Effects - enable interrupts
  ------------------------------------------------------------------------ */
 void check_kernel_mode(char * procName) {
@@ -796,25 +871,25 @@ void check_kernel_mode(char * procName) {
 
 /* ------------------------------------------------------------------------
  Name - initializeinterrupts
- Purpose - Initializes the interrupts required (clock interrupts).
- - Initializes a non-null value for Illegal_Int in IntVec.
- Parameters - none
- Returns - nothing
+ Purpose     - Initializes the interrupts required (clock interrupts).
+             - Initializes a non-null value for Illegal_Int in IntVec.
+ Parameters  - none
+ Returns     - nothing
  Side Effects - none
  ----------------------------------------------------------------------- */
 void initializeInterrupts() {
 //    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = (void*)illegalArgumentHandler;
     USLOSS_IntVec[USLOSS_CLOCK_INT] = (void*)clockHandler2;
-//    USLOSS_IntVec[USLOSS_DISK_INT] = (void*)diskHandler;
-//    USLOSS_IntVec[USLOSS_TERM_INT] = (void*)termHandler;
+    USLOSS_IntVec[USLOSS_DISK_INT] = (void*)diskHandler;
+    USLOSS_IntVec[USLOSS_TERM_INT] = (void*)terminalHandler;
 } /* initializeInterrupts */
 
 /* ------------------------------------------------------------------------
  Name - disableInterrupts
- Purpose - Disable interrupts
- - Thows an error if USLOSS is passed an invalid PSR
+ Purpose    - Disable interrupts
+            - Thows an error if USLOSS is passed an invalid PSR
  Parameters - none
- Returns - nothing
+ Returns    - nothing
  Side Effects - none
  ----------------------------------------------------------------------- */
 void disableInterrupts() {
@@ -826,12 +901,20 @@ void disableInterrupts() {
     return;
 } /* disableInterrupts */
 
-// FIXME: DOCUMENTATION
+/* ------------------------------------------------------------------------
+ Name - enableInterrupts
+ Purpose    - Enables interrupts
+            - Thows an error if USLOSS is passed an invalid PSR
+ Parameters - none
+ Returns    - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void enableInterrupts(){
     if (USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR) {
         USLOSS_Console("ERROR: enableInterrupts(): Failed to enable interrupts.\n");
+        USLOSS_Halt(1);
     }
-}
+} /* enableInterrupts */
 
 /* ------------------------------------------------------------------------
  Name - getAvailableSlot
@@ -942,7 +1025,9 @@ int MboxRelease(int mailboxID) {
     enableInterrupts(); 
       
     //TODO check a isZapped call from entry to MboxRelease
-    if (isZapped()) return -3;
+    if (isZapped()) {
+        return -3;
+    }
     
     return 0;
 } /* MboxRelease */
@@ -964,8 +1049,13 @@ void clearAllSlots(slotPtr slotToClear){
 	nullifySlot(temp->slotID);
 } /* clearAllSlots */
 
-
-/* check_io checks if any processes are receiveBlocked on one of the io_mailboxes*/ // FIXME: Block Comment
+/* ------------------------------------------------------------------------
+ Name - check_io
+ Purpose    - checks if any processes are receiveBlocked on any io_device_mailboxes
+ Parameters - none
+ Returns    - Boolean: 1 if there are any receiveBlocked Processes, 0 otherwise
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 int check_io() {
     for (int i = 0; i < 7; i++) {
         if (MailBoxTable[i].recieveBlocked != NULL) {
@@ -973,4 +1063,4 @@ int check_io() {
         }
     }
     return 0;
-}
+} /* check_io */
