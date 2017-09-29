@@ -1068,42 +1068,6 @@ int MboxRelease(int mailboxID) {
         // Disable interrupts when returning to this function.
 		disableInterrupts();
 	}
-	// while(currMBox->sendBlocked != NULL){
-//         // Set the "released on mailbox" flag to true
-// 		currMBox->sendBlocked->wasReleased = 1;
-//         
-//         // Grab the pid of the prcess which is being unblocked.
-//         // Remove the process from the sendBlockList of Mailbox and unblock it so it may finish.
-// 		int tempPid = currMBox->sendBlocked->pid;
-// 		currMBox->sendBlocked = currMBox->sendBlocked->next;
-// 		unblockProc(tempPid);
-//         
-//         // Disable interrupts when returning to this function.
-// 		disableInterrupts();
-// 	}
-// 	
-//     // Reactivate and terminate all processes on mailbox receiveBlockedList
-// 	while(currMBox->recieveBlocked != NULL){
-//         // Set the "released on mailbox" flag to true
-// 		currMBox->recieveBlocked->wasReleased = 1;
-//         
-//         // Grab the pid of the prcess which is being unblocked.
-//         // Remove the process from the sendBlockList of Mailbox and unblock it so it may finish.
-// 		int tempPid = currMBox->recieveBlocked->pid;
-// 		currMBox->recieveBlocked = currMBox->recieveBlocked->next;
-// 		unblockProc(tempPid);
-//         
-//         // Disable interrupts when returning to this function.
-// 		disableInterrupts();
-// 	}
-	
-	// If mailbox has slots, nullify them
-    // if (currMBox->firstSlotPtr != NULL){
-//         clearAllSlots(currMBox->firstSlotPtr);
-//     }
-        
-    // Nullify remaining fields in mailbox.
-//     nullifyMailBox(mailboxID);
         
     enableInterrupts(); 
       
