@@ -362,6 +362,25 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     // Grab the loction of the MailBox at mbox_id
     mBoxPtr currMBox = &MailBoxTable[mbox_id];
     
+    if (isZeroSlotMailBox(mbox_id) && currMBox->sendBlocked != NULL ){
+    	mboxProcPtr toUnblock = currMBox->sendBlocked;
+    	
+    	int actualMessageSize = toUnblock->msgSize;
+    	
+    	if (actualMessageSize > msg_size) {
+        	enableInterrupts();
+        	return -1;
+    	}
+    
+    	// Copy message to process from slot.
+    	memcpy(msg_ptr, toUnblock->message, actualMessageSize); 
+		
+		//update sendBlocked
+    	currMBox->sendBlocked = toUnblock->next;
+    	
+    	unblockProc(toUnblock->pid);
+    	return actualMessageSize;
+    }
     
     // There is no message in the mailbox, Current will need to block.
     if (currMBox->numSlotsUsed <= 0){
@@ -688,10 +707,16 @@ Parameters  - int dev: the type of device needed // FIXME: do we actually need t
 Returns     - nothing
 Side Effects - none
 ----------------------------------------------------------------------- */
-void clockHandler2(int dev, int unit) {
+void clockHandler2(int dev, void *args) {
     
     check_kernel_mode("clockHandler2()");
     disableInterrupts();
+    
+    // if (!args){
+//     	USLOSS_Console("ERROR: clockHandler2(): args was null. Halting...\n");
+//         USLOSS_Halt(1);
+//     }
+    long unit = (long)args;
     
     // Check if device is actually the clock handler AND unit is valid
     if (dev != USLOSS_CLOCK_INT || unit != 0) {
@@ -728,10 +753,12 @@ void clockHandler2(int dev, int unit) {
  Returns    - void
  Side Effects - none
  ----------------------------------------------------------------------- */
-void diskHandler(int dev, int unit) {
+void diskHandler(int dev, void *args) {
     check_kernel_mode("diskHandler");
     disableInterrupts();
     
+    long unit = (long)args;
+
     // Check if device is actually the disk handler AND unit is valid
     if (dev != USLOSS_DISK_INT || unit < 0 || unit > 1) {
         USLOSS_Console("ERROR: diskHandler(): wrong device or unit. Halting...\n");
@@ -758,9 +785,11 @@ void diskHandler(int dev, int unit) {
  Returns    - void
  Side Effects - none
  ----------------------------------------------------------------------- */
-void terminalHandler(int dev, int unit) {
+void terminalHandler(int dev, void *args) {
     check_kernel_mode("termHandler");
     disableInterrupts();
+    
+    long unit = (long)args;
     
     // Check if device is actually the disk handler AND unit is valid
     if (dev != USLOSS_TERM_INT || unit < 0 || unit > 3) {
