@@ -9,6 +9,7 @@ difftext="diff"
 maxtest=48
 diffdir="diffOutputs/"
 
+
 rm myResults/* &> /dev/null
 rm diffOutputs/* &> /dev/null
 mkdir myResults &> /dev/null
@@ -47,4 +48,3 @@ do
 done
 
 make clean &> /dev/null
-

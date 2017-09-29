@@ -6,4 +6,5 @@ If time:
             Change Mailbox to have only a single blocklist.
 
 Questions:
-            Which interrupt handlers are going to assigned to with mailboxes?
+            Which interrupt handlers are going to assigned to which mailboxes?
+            In clockHandler, we are sending a message of size "sizeof(int)" (this represents status). The mailbox assigned to the clockhandler has slots sizes of zero. How do we make the copy? We are not getting past an error-checking if-statement.

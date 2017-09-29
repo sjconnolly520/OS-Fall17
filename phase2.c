@@ -35,6 +35,7 @@ int MboxCondSend(int, void *, int );
 int MboxCondSend(int, void *, int );
 int waitDevice(int, int, int *);
 int check_io(void);
+int isZeroSlotMailBox(int);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -169,6 +170,7 @@ void nullifyProc(int processIndex) {
     mboxProcTable[processIndex].pid            = -1;
     mboxProcTable[processIndex].msgSize        = -1;
     mboxProcTable[processIndex].message        = NULL;
+    mboxProcTable[processIndex].next           = NULL;
     mboxProcTable[processIndex].wasReleased    = 0;
 } /* nullifyProc */
 
@@ -230,7 +232,7 @@ void printMBoxSlotContents(int mbox_id) {
     slotPtr walker = MailBoxTable[mbox_id].firstSlotPtr;
     
     while (walker != NULL) {
-        printf("%s\n", walker->message);
+        printf("Message = %s\n", walker->message);
         walker = walker->siblingSlotPtr;
     }
 } /* printMBoxSlotContents */
@@ -299,7 +301,6 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
     		enableInterrupts();
     		return -3;
     	}
-    	
         return 0;
     }
     
@@ -311,7 +312,9 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
     	int blockedPID = currMBox->recieveBlocked->pid;
     	mboxProcTable[blockedPID % MAXPROC].msgSize = msg_size;
     	memcpy(currMBox->recieveBlocked->message, msg_ptr, msg_size);
-    	
+        
+        currMBox->recieveBlocked = currMBox->recieveBlocked->next;
+        
         // Unblock the receiveBlocked process
     	unblockProc(blockedPID);
     	return 0;
@@ -438,6 +441,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     return actualMessageSize;
 } /* MboxReceive */
 
+// FIXME: Block comment
 int MboxCondSend(int mailboxID, void *message, int messageSize) {
     
     // Check if in kernel mode
@@ -462,8 +466,9 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
         enableInterrupts();
         return -1;
     }
-    // If msg_size > MailBox.maxSlotSize OR msg_size < 0
-    if (messageSize > MailBoxTable[mailboxID].slotSize || messageSize < 0) {
+    // If (msg_size > MailBox.maxSlotSize AND it is not a zeroSlotter) OR
+    //    (msg_size < 0)
+    if ((messageSize > MailBoxTable[mailboxID].slotSize && !isZeroSlotMailBox(mailboxID)) || messageSize < 0) {
         enableInterrupts();
         return -1;
     }
@@ -479,8 +484,16 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
     // Grab the loction of the MailBox at mbox_id
     mBoxPtr currMBox = &MailBoxTable[mailboxID];
     
+//    if (currMBox->recieveBlocked == NULL){
+//        USLOSS_Console("ReceiveBlocked is null, Dunce. \n");
+//    }
+//    
+//    if (currMBox->recieveBlocked != NULL){
+//        USLOSS_Console("ReceiveBlocked is not null, Dunce. \n");
+//    }
+    
     // If there are no available slots in Mailbox
-    if (currMBox->numSlotsUsed >= currMBox->numSlots&& currMBox->recieveBlocked == NULL) {
+    if (currMBox->numSlotsUsed >= currMBox->numSlots && currMBox->recieveBlocked == NULL) {
         enableInterrupts();
         return -2;
     }
@@ -493,6 +506,8 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
         int blockedPID = currMBox->recieveBlocked->pid;
         mboxProcTable[blockedPID % MAXPROC].msgSize = messageSize;
         memcpy(currMBox->recieveBlocked->message, message, messageSize);
+        
+        currMBox->recieveBlocked = currMBox->recieveBlocked->next;
         
         // Unblock the receiveBlocked process
         unblockProc(blockedPID);
@@ -512,17 +527,17 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
     return 0;
 } /* MboxCodSend */
 
-// FIXME: Insert Block comment
+/* ------------------------------------------------------------------------
+ Name - MboxCondReceive
+ Purpose    - Get a msg from a slot of the indicated mailbox.
+ Parameters - mailbox id, pointer to data of msg, max # of bytes that
+              can be received.
+ Returns    - actual size of msg if successful, -1 if invalid args.
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
 int MboxCondReceive(int mailboxID, void *message, int maxMessageSize){
     check_kernel_mode("MboxReceive()");
     disableInterrupts();
-    //disable interrupts
-    
-    // If calling process; FIXME: What is the story with zapped on condReceive? This line might not be here.
-    if (isZapped()) {
-        enableInterrupts();
-        return -2;
-    }
     
     // If mbox_id > MAXMBOX OR mbox_id < 0
     if (mailboxID > MAXMBOX || mailboxID < 0) {
@@ -585,20 +600,42 @@ int MboxCondReceive(int mailboxID, void *message, int maxMessageSize){
     }
     
     // Enable interrupts and return the received message size
+    
+    // If calling process isZapped
+    if (isZapped()) {
+        enableInterrupts();
+        return -3;
+    }
+    
     enableInterrupts();
     return actualMessageSize;
 } /* MboxCondReceive */
+
+/* ------------------------------------------------------------------------ FIXME
+ Name - isZeroSlotMailBox
+ Purpose    - Returns true if the mailbox indicated is zeroSlot
+ Parameters - mailbox id, pointer to put data of msg, max # of bytes that
+ can be received.
+ Returns - actual size of msg if successful, -1 if invalid args.
+ Side Effects - none.
+ ----------------------------------------------------------------------- */
+int isZeroSlotMailBox(int mailBoxID) {
+    if (MailBoxTable[mailBoxID].numSlots == 0) {
+        return 1;
+    }
+    return 0;
+} /* isZeroSlotMailBox */
 
 /*
  * waitDevice     FIXME: Block comment
  */
 int waitDevice(int type, int unit, int *status){
     
-    int mailboxID = -404;          // the index of the i/o mailbox
+    int mailboxID = -404;         // the index of the i/o mailbox
     int clockID = 0;              // index of the clock i/o mailbox
     int diskID[] = {1, 2};        // indexes of the disk i/o mailboxes
     int termID[] = {3, 4, 5, 6};  // indexes of the terminal i/o mailboxes
-    printf("I'm in waitDevice, Dickhead");
+    
     // Determine the index of the i/o mailbox for the given device type and unit
     switch (type) {
         case USLOSS_CLOCK_INT:
@@ -636,29 +673,35 @@ int waitDevice(int type, int unit, int *status){
     return 0;
 } /* waitDevice */
 
-void clockHandler2(int dev, int unit) {
+
+// FIXME: Documentation
+void clockHandler2(int dev, int mboxID) {
     
     check_kernel_mode("clockHandler2()");
-    dispatcher();
+    disableInterrupts();
     
     // Check if device is actually the clock handler AND unit is valid
-    if (dev != USLOSS_CLOCK_INT || unit != 0) {
+    if (dev != USLOSS_CLOCK_INT || mboxID != 0) {
         USLOSS_Console("ERROR: clockHandler2(): Invalid parameters. Halting...\n");
         USLOSS_Halt(1);
     }
     
-    int status;
+    int status;                     // Initialize field to contain return value
+    clockHandlerCount++;            // Increment how often this function has been called.
     
-    clockHandlerCount++;
+    // If this is the fifth time this function has been called
     if (clockHandlerCount >= 5) {
-        clockHandlerCount = 0;
+        clockHandlerCount = 0;              // Reset count
+        // Fetch status from DeviceInput
         if (USLOSS_DeviceInput(USLOSS_CLOCK_INT, 0, &status) == USLOSS_DEV_INVALID) {
             USLOSS_Console("ERROR: getCurrentTime(): Encountered error fetching current time. Halting.\n");
             USLOSS_Halt(1);
         }
-        MboxCondSend(unit, &status, sizeof(int));
+        // Make a call to unblock the process that is receiveBlocked on the device mailbox
+        MboxCondSend(mboxID, &status, sizeof(int));
     }
     
+    // Call dispatcher and stuff, I guess.
     timeSlice();
     enableInterrupts();
 }
