@@ -105,7 +105,6 @@ int start1(char *arg) {
     }
     
     // Initialize USLOSS_IntVec and system call handlers,
-    // FIXME: Write handler functions
     initializeInterrupts();
     
     // allocate mailboxes for interrupt handlers.  Etc...
@@ -762,6 +761,7 @@ void terminalHandler(int dev, int unit) {
     check_kernel_mode("termHandler");
     disableInterrupts();
     
+    USLOSS_Console("In terminal Handler.\n");
     // Check if device is actually the disk handler AND unit is valid
     if (dev != USLOSS_TERM_INT || unit < 0 || unit > 3) {
         USLOSS_Console("termHandler(): wrong device or unit\n");
