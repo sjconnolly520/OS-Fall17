@@ -356,7 +356,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         enableInterrupts();
         return -1;
     }
-    // If mailbox doesn't exits
+    // If mailbox doesn't exits 
     if (MailBoxTable[mbox_id].status == EMPTY) {
         enableInterrupts();
         return -1;
@@ -1023,15 +1023,26 @@ int MboxRelease(int mailboxID) {
         return 0;
     }
     
+    mboxProcPtr tempSend = currMBox->sendBlocked;
+    mboxProcPtr tempRec  = currMBox->recieveBlocked;
+    
+    // If mailbox has slots, nullify them
+    if (currMBox->firstSlotPtr != NULL){
+        clearAllSlots(currMBox->firstSlotPtr);
+    }
+        
+    // Nullify remaining fields in mailbox.
+    nullifyMailBox(mailboxID);
+    
     // Reactivate and terminate all processes on mailbox sendBlockedList
-	while(currMBox->sendBlocked != NULL){
+	while(tempSend != NULL){
         // Set the "released on mailbox" flag to true
-		currMBox->sendBlocked->wasReleased = 1;
+		tempSend->wasReleased = 1;
         
         // Grab the pid of the prcess which is being unblocked.
         // Remove the process from the sendBlockList of Mailbox and unblock it so it may finish.
-		int tempPid = currMBox->sendBlocked->pid;
-		currMBox->sendBlocked = currMBox->sendBlocked->next;
+		int tempPid = tempSend->pid;
+		tempSend = tempSend->next;
 		unblockProc(tempPid);
         
         // Disable interrupts when returning to this function.
@@ -1039,27 +1050,19 @@ int MboxRelease(int mailboxID) {
 	}
 	
     // Reactivate and terminate all processes on mailbox receiveBlockedList
-	while(currMBox->recieveBlocked != NULL){
+	while(tempRec != NULL){
         // Set the "released on mailbox" flag to true
-		currMBox->recieveBlocked->wasReleased = 1;
+		tempRec->wasReleased = 1;
         
         // Grab the pid of the prcess which is being unblocked.
         // Remove the process from the sendBlockList of Mailbox and unblock it so it may finish.
-		int tempPid = currMBox->recieveBlocked->pid;
-		currMBox->recieveBlocked = currMBox->recieveBlocked->next;
+		int tempPid = tempRec->pid;
+		tempRec = tempRec->next;
 		unblockProc(tempPid);
         
         // Disable interrupts when returning to this function.
 		disableInterrupts();
 	}
-	
-	// If mailbox has slots, nullify them
-    if (currMBox->firstSlotPtr != NULL){
-        clearAllSlots(currMBox->firstSlotPtr);
-    }
-        
-    // Nullify remaining fields in mailbox.
-    nullifyMailBox(mailboxID);
         
     enableInterrupts(); 
       
