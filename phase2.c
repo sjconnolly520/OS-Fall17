@@ -853,7 +853,7 @@ void systemCallHandler(int dev, void *unit) {
 		USLOSS_Halt(1);
 	}
 	
-	(systemCallVec[args->number])(args);
+	systemCallVec[args->number](args);
     enableInterrupts();
 }
 
