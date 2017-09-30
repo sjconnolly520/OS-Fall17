@@ -61,7 +61,7 @@ mboxProc mboxProcTable[50];
 // handlers, ...
 int clockHandlerCount = 0;
 
-
+void (*systemCallVec[MAXSYSCALLS])(systemArgs *args);
 
 
 /* -------------------------- Functions ----------------------------------- */
@@ -109,6 +109,9 @@ int start1(char *arg) {
         nullifyProc(i);
     }
     
+    for (int i = 0; i < MAXSYSCALLS; i++) {
+        systemCallVec[i] = nullsys;
+    }
     // Initialize USLOSS_IntVec and system call handlers,
     initializeInterrupts();
     
@@ -850,7 +853,8 @@ void systemCallHandler(int dev, void *unit) {
 		USLOSS_Halt(1);
 	}
 	
-	nullsys(args);
+	(systemCallVec[args->number])(args);
+    enableInterrupts();
 }
 
 /* ------------------------------------------------------------------------
