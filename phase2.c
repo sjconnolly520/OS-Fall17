@@ -38,8 +38,8 @@ int check_io(void);
 int isZeroSlotMailBox(int);
 void clockHandler2(int, void*);
 void diskHandler(int, void*);
-void terminalHandler(int, void*);
-void systemCallHandler(int, void*);
+void termHandler(int, void*);
+void syscallHandler(int, void*);
 void nullsys(systemArgs *);
 
 /* -------------------------- Globals ------------------------------------- */
@@ -55,12 +55,13 @@ mailbox MailBoxTable[MAXMBOX];
 // the mailbox slots
 mailSlot SlotTable[MAXSLOTS];
 
+// the phase 2 process table
 mboxProc mboxProcTable[50];
 
-// array of function ptrs to system call
-// handlers, ...
+// number of times the clock handler has been called. Resets at 5.
 int clockHandlerCount = 0;
 
+// array of function ptrs to system call
 void (*systemCallVec[MAXSYSCALLS])(systemArgs *args);
 
 
@@ -79,12 +80,13 @@ int start1(char *arg) {
     int status;
     
     
-    if (DEBUG2 && debugflag2)
+    if (DEBUG2 && debugflag2) {
         USLOSS_Console("start1(): at beginning\n");
+    }
 
     check_kernel_mode("start1");
     // Disable interrupts
-    disableInterrupts();            // FIXME: Write method
+    disableInterrupts();
 
     // Initialize the mail box table
     for (int i = 0; i < MAXMBOX; i++) {
@@ -109,19 +111,20 @@ int start1(char *arg) {
         nullifyProc(i);
     }
     
+    // Initialize the systemCallVector such that all indexes point to nullsys
     for (int i = 0; i < MAXSYSCALLS; i++) {
         systemCallVec[i] = nullsys;
     }
+    
     // Initialize USLOSS_IntVec and system call handlers,
     initializeInterrupts();
     
-    // allocate mailboxes for interrupt handlers.  Etc...
-
     enableInterrupts();
 
     // Create a process for start2, then block on a join until start2 quits
-    if (DEBUG2 && debugflag2)
+    if (DEBUG2 && debugflag2) {
         USLOSS_Console("start1(): fork'ing start2 process\n");
+    }
     kid_pid = fork1("start2", start2, NULL, 4 * USLOSS_MIN_STACK, 1);
     if ( join(&status) != kid_pid ) {
         USLOSS_Console("start2(): join returned something other than ");
@@ -230,20 +233,6 @@ int MboxCreate(int slots, int slot_size) {
     return -1;
 } /* MboxCreate */
 
-
-/*
- * This method is probably trash. It prints all messages stored in a mailbox's slots.
- */
-void printMBoxSlotContents(int mbox_id) {
-    
-    slotPtr walker = MailBoxTable[mbox_id].firstSlotPtr;
-    
-    while (walker != NULL) {
-        printf("Message = %s\n", walker->message);
-        walker = walker->siblingSlotPtr;
-    }
-} /* printMBoxSlotContents */
-
 /* ------------------------------------------------------------------------
    Name - MboxSend
    Purpose    - Put a message into a slot for the indicated mailbox.
@@ -315,27 +304,26 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
     else if (currMBox->recieveBlocked != NULL){
         
         // Grab the pid of the first receiveBlocked process
-        // Copy the message from Current directly to the receiveBlocked process
-    	
-    	
     	int blockedPID = currMBox->recieveBlocked->pid;
     	
+        // The receive blocked process has a buffer too small for the sending message
     	if (mboxProcTable[blockedPID % MAXPROC].msgSize < msg_size){
     		
-    		//tell recieved
+    		// Tell recieved the size of the message is -1
     		mboxProcTable[blockedPID % MAXPROC].msgSize = -1;
     		
-    		//unblock
+    		// Unblock the receiveBlocked process
     		unblockProc(blockedPID);
     		
     		enableInterrupts();
-    		
     		return -1;
     	}
+        
+        // Copy the message from Current directly to the receiveBlocked process if it fits
     	mboxProcTable[blockedPID % MAXPROC].msgSize = msg_size;
-    	
     	memcpy(currMBox->recieveBlocked->message, msg_ptr, msg_size);
         
+        // Remove the head of the receiveBlock list (the process to copy to)
         currMBox->recieveBlocked = currMBox->recieveBlocked->next;
         
         enableInterrupts();
@@ -371,7 +359,6 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     
     check_kernel_mode("MboxReceive()");
     disableInterrupts();
-    //disable interrupts
     
     // If mbox_id > MAXMBOX OR mbox_id < 0
     if (mbox_id > MAXMBOX || mbox_id < 0) {
@@ -387,11 +374,14 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
     // Grab the loction of the MailBox at mbox_id
     mBoxPtr currMBox = &MailBoxTable[mbox_id];
     
+    // If this is a zero slot mailbox and there is send blocked process
     if (isZeroSlotMailBox(mbox_id) && currMBox->sendBlocked != NULL ){
     	mboxProcPtr toUnblock = currMBox->sendBlocked;
     	
+        // Get size of message to receive
     	int actualMessageSize = toUnblock->msgSize;
     	
+        // Message is too big to receive
     	if (actualMessageSize > msg_size) {
         	enableInterrupts();
         	return -1;
@@ -473,7 +463,6 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size) {
         asscociateSlotWithMailbox(mbox_id, nextSlot);
         currMBox->numSlotsUsed++;
         
-        // FIXME: Nullify entry in processTable. Do we need that?
         unblockProc(procToAdd->pid);
     }
     
@@ -550,6 +539,7 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
         mboxProcTable[blockedPID % MAXPROC].msgSize = messageSize;
         memcpy(currMBox->recieveBlocked->message, message, messageSize);
         
+        // Remove the head of the receiveBlock list (the process to copy to)
         currMBox->recieveBlocked = currMBox->recieveBlocked->next;
         
         // Unblock the receiveBlocked process
@@ -632,18 +622,14 @@ int MboxCondReceive(int mailboxID, void *message, int maxMessageSize){
         memcpy(nextSlot->message, procToAdd->message, procToAdd->msgSize);
         nextSlot->actualMessageSize = procToAdd->msgSize;
         
-        // FIXME: Do we need to nullify procToAdd->next?
-        
         // Add the slot to the mailbox
         asscociateSlotWithMailbox(mailboxID, nextSlot);
         currMBox->numSlotsUsed++;
         
-        // FIXME: Nullify entry in processTable. Do we need that?
         unblockProc(procToAdd->pid);
     }
     
     // Enable interrupts and return the received message size
-    
     // If calling process isZapped
     if (isZapped()) {
         enableInterrupts();
@@ -726,14 +712,13 @@ int waitDevice(int type, int unit, int *status){
 /* ------------------------------------------------------------------------
 Name        - clockHandler2
 Purpose     - Handles the logic of releasing a blocked process on the clockDevice mailbox.
-Parameters  - int dev: the type of device needed // FIXME: do we actually need this variable?
+Parameters  - int dev: the type of device needed
             - int mboxID: the index in the MailBoxTable of the ClockDevice
               mailbox to block on.
 Returns     - nothing
 Side Effects - none
 ----------------------------------------------------------------------- */
 void clockHandler2(int dev, void *args) {
-    
     check_kernel_mode("clockHandler2()");
     disableInterrupts();
     
@@ -799,14 +784,14 @@ void diskHandler(int dev, void *args) {
 } /* diskHandler */
 
 /* ------------------------------------------------------------------------
- Name       - terminalHandler
+ Name       - termHandler
  Purpose    - called when interrupt vector is activated for this device
  Parameters - int dev: device type
             - int unit: index in device type array
  Returns    - void
  Side Effects - none
  ----------------------------------------------------------------------- */
-void terminalHandler(int dev, void *args) {
+void termHandler(int dev, void *args) {
     check_kernel_mode("termHandler");
     disableInterrupts();
     
@@ -829,32 +814,33 @@ void terminalHandler(int dev, void *args) {
     
     MboxCondSend(mBoxID, &status, sizeof(int));
     enableInterrupts();
-} /* terminalHandler */
+} /* termHandler */
 
 /* ------------------------------------------------------------------------
  Name - syscallHandler
- Purpose - called when interrupt vector is activated for this device
- Parameters - device, unit
- Returns - void
+ Purpose    - called when interrupt vector is activated for this device
+ Parameters - int dev: the device type
+            - int unit: the argument to pass to the function at
+              systemCallVec[unit->number]. unit is cast to a systemArgs
+ Returns    - nothing
  Side Effects - none
  ----------------------------------------------------------------------- */
-
-void systemCallHandler(int dev, void *unit) {
+void syscallHandler(int dev, void *unit) {
     check_kernel_mode("systemCallHandler");
     disableInterrupts();
     
-    systemArgs *args = unit;
+    systemArgs *args = unit;                // Cast unit to parameter to a systemArgs struct
     
-    if (args->number < 0 || args->number > MAXSYSCALLS - 1){
+    // Error check for illegal arguments
+    if (dev != USLOSS_SYSCALL_INT || args->number < 0 || args->number > MAXSYSCALLS - 1){
 		USLOSS_Console("syscallHandler(): sys number %d is wrong.  Halting...\n", args->number);
 		USLOSS_Halt(1);
 	}
 	
+    // Call the function pointed to by the given index in the array.
 	systemCallVec[args->number](args);
     enableInterrupts();
-}
-
-
+} /* syscallHandler */
 
 /* ------------------------------------------------------------------------
  Name - insertProcessInSendBLockedList
@@ -955,8 +941,8 @@ void initializeInterrupts() {
 //    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = (void*)illegalArgumentHandler;
     USLOSS_IntVec[USLOSS_CLOCK_INT] = (void*)clockHandler2;
     USLOSS_IntVec[USLOSS_DISK_INT] = (void*)diskHandler;
-    USLOSS_IntVec[USLOSS_TERM_INT] = (void*)terminalHandler;
-    USLOSS_IntVec[USLOSS_SYSCALL_INT] = (void*)systemCallHandler;
+    USLOSS_IntVec[USLOSS_TERM_INT] = (void*)termHandler;
+    USLOSS_IntVec[USLOSS_SYSCALL_INT] = (void*)syscallHandler;
 } /* initializeInterrupts */
 
 /* ------------------------------------------------------------------------
@@ -968,7 +954,6 @@ void initializeInterrupts() {
  Side Effects - none
  ----------------------------------------------------------------------- */
 void disableInterrupts() {
-    
     if (USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR){
         USLOSS_Console("ERROR: disableInterrupts(): Failed to disable interrupts.\n");
         USLOSS_Halt(1);
@@ -1052,7 +1037,6 @@ int MboxRelease(int mailboxID) {
         nullifyMailBox(mailboxID);
         
         enableInterrupts();
-        //TODO check a isZapped call from entry to MboxRelease
         if (isZapped()) {
             return -3;
         }
@@ -1102,7 +1086,6 @@ int MboxRelease(int mailboxID) {
         
     enableInterrupts(); 
       
-    //TODO check a isZapped call from entry to MboxRelease
     if (isZapped()) {
         return -3;
     }
@@ -1145,13 +1128,12 @@ int check_io() {
 
 /* ------------------------------------------------------------------------
  Name - nullsys
- Purpose    - for phase3.
+ Purpose    - for phase3. Currently prints an error and halts.
  Parameters - none
- Returns    - halts
- Side Effects - none
+ Returns    - nothing
+ Side Effects - Halts
  ----------------------------------------------------------------------- */
-void nullsys(systemArgs *args)
-{
+void nullsys(systemArgs *args) {
     USLOSS_Console("nullsys(): Invalid syscall %d. Halting...\n", args->number);
     USLOSS_Halt(1);
 } /* nullsys */
