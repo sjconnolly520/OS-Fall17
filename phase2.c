@@ -737,10 +737,6 @@ void clockHandler2(int dev, void *args) {
     check_kernel_mode("clockHandler2()");
     disableInterrupts();
     
-    // if (!args){
-//     	USLOSS_Console("ERROR: clockHandler2(): args was null. Halting...\n");
-//         USLOSS_Halt(1);
-//     }
     long unit = (long)args;
     
     // Check if device is actually the clock handler AND unit is valid
@@ -842,6 +838,7 @@ void terminalHandler(int dev, void *args) {
  Returns - void
  Side Effects - none
  ----------------------------------------------------------------------- */
+
 void systemCallHandler(int dev, void *unit) {
     check_kernel_mode("systemCallHandler");
     disableInterrupts();
@@ -856,6 +853,8 @@ void systemCallHandler(int dev, void *unit) {
 	systemCallVec[args->number](args);
     enableInterrupts();
 }
+
+
 
 /* ------------------------------------------------------------------------
  Name - insertProcessInSendBLockedList
@@ -928,7 +927,6 @@ void asscociateSlotWithMailbox(int mboxID, slotPtr slotToInsert){
     slotToInsert->siblingSlotPtr = NULL;
 } /* asscociateSlotWithMailbox */
 
-// FIXME: Edit block comment
 /* ------------------------------------------------------------------------
  Name - check_kernel_mode
  Purpose    - Checks the current OS mode.
