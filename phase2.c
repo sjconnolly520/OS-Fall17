@@ -60,8 +60,7 @@ mboxProc mboxProcTable[50];
 // handlers, ...
 int clockHandlerCount = 0;
 
-
-
+void (*systemCallVec[MAXSYSCALLS])(systemArgs *args);
 
 /* -------------------------- Functions ----------------------------------- */
 
