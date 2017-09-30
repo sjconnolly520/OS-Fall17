@@ -40,6 +40,7 @@ void clockHandler2(int, void*);
 void diskHandler(int, void*);
 void terminalHandler(int, void*);
 void systemCallHandler(int, void*);
+void nullsys(systemArgs *);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -312,11 +313,29 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size) {
         
         // Grab the pid of the first receiveBlocked process
         // Copy the message from Current directly to the receiveBlocked process
+    	
+    	
     	int blockedPID = currMBox->recieveBlocked->pid;
+    	
+    	if (mboxProcTable[blockedPID % MAXPROC].msgSize < msg_size){
+    		
+    		//tell recieved
+    		mboxProcTable[blockedPID % MAXPROC].msgSize = -1;
+    		
+    		//unblock
+    		unblockProc(blockedPID);
+    		
+    		enableInterrupts();
+    		
+    		return -1;
+    	}
     	mboxProcTable[blockedPID % MAXPROC].msgSize = msg_size;
+    	
     	memcpy(currMBox->recieveBlocked->message, msg_ptr, msg_size);
         
         currMBox->recieveBlocked = currMBox->recieveBlocked->next;
+        
+        enableInterrupts();
         
         // Unblock the receiveBlocked process
     	unblockProc(blockedPID);
@@ -821,7 +840,17 @@ void terminalHandler(int dev, void *args) {
  Side Effects - none
  ----------------------------------------------------------------------- */
 void systemCallHandler(int dev, void *unit) {
+    check_kernel_mode("systemCallHandler");
+    disableInterrupts();
     
+    systemArgs *args = unit;
+    
+    if (args->number < 0 || args->number > MAXSYSCALLS - 1){
+		USLOSS_Console("syscallHandler(): sys number %d is wrong.  Halting...\n", args->number);
+		USLOSS_Halt(1);
+	}
+	
+	nullsys(args);
 }
 
 /* ------------------------------------------------------------------------
@@ -1111,3 +1140,16 @@ int check_io() {
     }
     return 0;
 } /* check_io */
+
+/* ------------------------------------------------------------------------
+ Name - nullsys
+ Purpose    - for phase3.
+ Parameters - none
+ Returns    - halts
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void nullsys(systemArgs *args)
+{
+    USLOSS_Console("nullsys(): Invalid syscall %d. Halting...\n", args->number);
+    USLOSS_Halt(1);
+} /* nullsys */
