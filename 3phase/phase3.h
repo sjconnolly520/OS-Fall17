@@ -7,5 +7,8 @@
 
 #define MAXSEMS         200
 
+#define EMPTY           -1
+#define USED             1
+
 #endif /* _PHASE3_H */
 
