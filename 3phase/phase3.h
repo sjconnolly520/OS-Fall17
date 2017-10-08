@@ -8,7 +8,8 @@
 #define MAXSEMS         200
 
 #define EMPTY           -1
-#define USED             1
+#define ACTIVE           1
+#define WAIT_BLOCK       11
 
 #endif /* _PHASE3_H */
 
