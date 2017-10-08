@@ -16,7 +16,8 @@ void spawn(USLOSS_Sysargs *);
 int spawnReal(char *, int (*startFunc)(char *), char *, int, int );
 int spawnLaunch(char *);
 
-
+void wait(USLOSS_Sysargs *sysargs);
+int waitReal(int*);
 
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
@@ -69,6 +70,7 @@ int start2(char *arg) {
      */
     pid = waitReal(&status);
     
+    return -404;
 } /* start2 */
 
 /* ------------------------------------------------------------------------
@@ -98,7 +100,7 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
-    pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, sysargs->arg3, sysargs->arg4);
+    pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
     
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
@@ -160,7 +162,20 @@ int spawnLaunch(char * args) {
     // Call the process' startFunc with the given args
     p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
+    return -404;
+}
+
+void wait(USLOSS_Sysargs *sysargs){
+    //check
     
+    //call waitReal
+    
+    
+    //setup args for return
+    //switch back to usr mode
+}
+int waitReal(int * temp) {
+    return -404;
 }
 
 
