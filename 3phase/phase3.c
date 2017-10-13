@@ -19,7 +19,9 @@ int spawnLaunch(char *);
 
 void nullsys3(USLOSS_Sysargs *);
 int waitReal(int*);
-void wait(USLOSS_Sysargs *args);
+void wait(USLOSS_Sysargs *);
+
+void terminate(USLOSS_Sysargs *);
 
 
 void setUserMode(void);
@@ -42,7 +44,7 @@ int start2(char *arg) {
     // initialize systemCallVec to system call functions
     systemCallVec[SYS_SPAWN] = spawn;
     systemCallVec[SYS_WAIT] = wait;
-    systemCallVec[SYS_TERMINATE] = nullsys3;
+    systemCallVec[SYS_TERMINATE] = terminate;
     systemCallVec[SYS_SEMCREATE] = nullsys3;
     systemCallVec[SYS_SEMP] = nullsys3;
     systemCallVec[SYS_SEMV] = nullsys3;
@@ -124,7 +126,13 @@ void spawn(USLOSS_Sysargs *sysargs){
     setUserMode();
 }
 
-
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - spawnReal
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, int priority){
     
     int mboxID;
@@ -166,7 +174,13 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     return kidPID;
 }
 
-
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - spawnLaunch
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 int spawnLaunch(char * args) {
     
     // If child has higher priority than its parent, Create index in proc table, Create MailBox
@@ -183,8 +197,14 @@ int spawnLaunch(char * args) {
     
     return -404;
 }
-/* Wait for a child process to terminate. */
-void wait(USLOSS_Sysargs *args){
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - wait
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void wait(USLOSS_Sysargs * args){
 
     //check
     if ((long) args->number != SYS_WAIT) {
@@ -207,21 +227,45 @@ void wait(USLOSS_Sysargs *args){
         args->arg1 = ((void *) (long) kidPID);
         args->arg2 = ((void *) (long) status);
     }
-    //switch back to usr mode
+    setUserMode();
 }
 
-/* Sets the mode from kernel mode to user mode */
-void setUserMode() {
-    if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
-        USLOSS_Console("ERROR: setUserMode(): Failed to chance to User Mode.");
-    }
-}
-/* Called by wait. Sets process table status of calling process and calls phase1 join. */
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - waitReal
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 int waitReal(int * status) {
     p3ProcTable[getpid() % MAXPROC].status = WAIT_BLOCK;
     return join(status);
 }
 
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - Terminate
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void terminate(USLOSS_Sysargs * args) {
+    
+}
+
 void nullsys3(USLOSS_Sysargs *sysargs) {
     
+}
+
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - setUserMode
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void setUserMode() {
+    if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
+        USLOSS_Console("ERROR: setUserMode(): Failed to chance to User Mode.");
+    }
 }

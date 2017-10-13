@@ -90,13 +90,20 @@ int Wait(int *pid, int *status)
  *  Description: This is the call entry to terminate 
  *               the invoking process and its children
  *
- *  Arguments:   int status -- the commpletion status of the process
+ *  Arguments:   int status -- the completion status of the process
  *
  *  Return Value: 0 means success, -1 means error occurs
  *
  */
 void Terminate(int status)
 {
+    USLOSS_Sysargs sysArg;
+    
+    CHECKMODE;
+    sysArg.number = SYS_TERMINATE;
+    sysArg.arg1 = ((void *) (long) status);
+    
+    USLOSS_Syscall(&sysArg);
     
 } /* end of Terminate */
 
