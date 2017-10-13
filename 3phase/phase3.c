@@ -198,7 +198,7 @@ int spawnLaunch(char * args) {
     return -404;
 }
 /* ------------------------------------------------------------------------ FIXME: Block comment
- Name - wait
+ Name - wait1
  Purpose     - kernel mode version of spawn.
  Parameters  - USLOSS_Systemarg
  Returns     - nothing
@@ -243,7 +243,7 @@ int waitReal(int * status) {
 }
 
 /* ------------------------------------------------------------------------ FIXME: Block comment
- Name - Terminate
+ Name - terminate
  Purpose     - kernel mode version of spawn.
  Parameters  - USLOSS_Systemarg
  Returns     - nothing
