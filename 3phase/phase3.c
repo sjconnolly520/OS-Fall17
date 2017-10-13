@@ -19,9 +19,10 @@ int spawnLaunch(char *);
 
 void nullsys3(USLOSS_Sysargs *);
 int waitReal(int*);
-void wait(USLOSS_Sysargs *);
+void wait1(USLOSS_Sysargs *);
 
 void terminate(USLOSS_Sysargs *);
+void terminateReal(int status);
 
 
 void setUserMode(void);
@@ -43,7 +44,7 @@ int start2(char *arg) {
     // Initialize systemCallVec array with appropriate system call functions
     // initialize systemCallVec to system call functions
     systemCallVec[SYS_SPAWN] = spawn;
-    systemCallVec[SYS_WAIT] = wait;
+    systemCallVec[SYS_WAIT] = wait1;
     systemCallVec[SYS_TERMINATE] = terminate;
     systemCallVec[SYS_SEMCREATE] = nullsys3;
     systemCallVec[SYS_SEMP] = nullsys3;
@@ -157,6 +158,9 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     strcpy(p3ProcTable[kidPID % MAXPROC].name, name);
     p3ProcTable[kidPID % MAXPROC].startFunc = startFunc;
     
+    //set pid
+    p3ProcTable[kidPID % MAXPROC].pid = kidPID;
+    
     // Copy args to procTable entry
     if (arg == NULL) {
         p3ProcTable[kidPID % MAXPROC].args[0] = 0;
@@ -204,7 +208,7 @@ int spawnLaunch(char * args) {
  Returns     - nothing
  Side Effects - none
  ----------------------------------------------------------------------- */
-void wait(USLOSS_Sysargs * args){
+void wait1(USLOSS_Sysargs * args){
 
     //check
     if ((long) args->number != SYS_WAIT) {
@@ -250,9 +254,33 @@ int waitReal(int * status) {
  Side Effects - none
  ----------------------------------------------------------------------- */
 void terminate(USLOSS_Sysargs * args) {
-    
+    //check
+    if ((long) args->number != SYS_TERMINATE) {
+        args->arg2 = (void *) -1;
+        return;
+    }
+    	
+    //call tReal
+    if (args->arg1){
+    	terminateReal((int)(long)args->arg1);
+    }
 }
 
+void terminateReal(int status){
+	
+	int myPID = getpid();
+	p3ProcPtr current = &p3ProcTable[myPID % MAXPROC];
+	
+	//zap loop
+	while(current->children != NULL){
+		zap(current->children->pid);
+		current->children = current->children->nextSibling;
+	}
+
+	current->status = EMPTY;
+	
+	quit(status);
+}
 void nullsys3(USLOSS_Sysargs *sysargs) {
     
 }
