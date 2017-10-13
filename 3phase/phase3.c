@@ -5,6 +5,7 @@
 #include "phase3.h"
 #include "sems.h"
 
+
 #include <string.h>
 
 /*----------Prototypes------------*/
@@ -16,8 +17,14 @@ void spawn(USLOSS_Sysargs *);
 int spawnReal(char *, int (*startFunc)(char *), char *, int, int );
 int spawnLaunch(char *);
 
-void wait(USLOSS_Sysargs *sysargs);
+void nullsys3(USLOSS_Sysargs *);
 int waitReal(int*);
+void wait(USLOSS_Sysargs *);
+
+void terminate(USLOSS_Sysargs *);
+
+
+void setUserMode(void);
 
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
@@ -33,6 +40,18 @@ int start2(char *arg) {
      * Data structure initialization as needed...
      */
     
+    // Initialize systemCallVec array with appropriate system call functions
+    // initialize systemCallVec to system call functions
+    systemCallVec[SYS_SPAWN] = spawn;
+    systemCallVec[SYS_WAIT] = wait;
+    systemCallVec[SYS_TERMINATE] = terminate;
+    systemCallVec[SYS_SEMCREATE] = nullsys3;
+    systemCallVec[SYS_SEMP] = nullsys3;
+    systemCallVec[SYS_SEMV] = nullsys3;
+    systemCallVec[SYS_SEMFREE] = nullsys3;
+    systemCallVec[SYS_GETPID] = nullsys3;
+    systemCallVec[SYS_GETTIMEOFDAY] = nullsys3;
+    systemCallVec[SYS_CPUTIME] = nullsys3;
     
     /*
      * Create first user-level process and wait for it to finish.
@@ -70,7 +89,8 @@ int start2(char *arg) {
      */
     pid = waitReal(&status);
     
-    return -404;
+    quit(0);
+    return 0;
 } /* start2 */
 
 /* ------------------------------------------------------------------------
@@ -83,8 +103,7 @@ int start2(char *arg) {
 
 void spawn(USLOSS_Sysargs *sysargs){
     
-    long pid;
-    //check args
+    // Chack for any invalid args
     if ((long) sysargs->number != SYS_SPAWN) {
         sysargs->arg4 = (void *) -1;
         return;
@@ -100,54 +119,68 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
-    pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
+    long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
     
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
-    
-    // FIXME: SetUserMode();
+    setUserMode();
 }
 
-
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - spawnReal
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, int priority){
     
-    int kidpid = fork1(name, spawnLaunch, arg, stacksize, priority);
+    int mboxID;
+    
+    // Fork the new process, when fork returns, save kidpid
+    int kidPID = fork1(name, spawnLaunch, arg, stacksize, priority);
     
     // Return -1 if process could not be created
-    if (kidpid < 0) {
+    if (kidPID < 0) {
         return -1;
     }
     
     // Initialize entry in procTable
     // If Parent has higher priority than new child, initilize procTable Entry
-    if (p3ProcTable[kidpid % MAXPROC].status == EMPTY ){
-        p3ProcTable[kidpid % MAXPROC].mboxID = MboxCreate(0, 0);
-        p3ProcTable[kidpid % MAXPROC].status = USED;
+    if (p3ProcTable[kidPID % MAXPROC].status == EMPTY ){
+        mboxID = MboxCreate(0, 0);
+        p3ProcTable[kidPID % MAXPROC].mboxID = mboxID;
+        p3ProcTable[kidPID % MAXPROC].status = ACTIVE;
     }
     
-    // Copy name to procTable entry
-    strcpy(p3ProcTable[kidpid % MAXPROC].name, name);
-    // Copy func to procTable entry
-    p3ProcTable[kidpid % MAXPROC].startFunc = startFunc;
+    // Copy name to procTable entry, Copy startFunc to procTable entry
+    strcpy(p3ProcTable[kidPID % MAXPROC].name, name);
+    p3ProcTable[kidPID % MAXPROC].startFunc = startFunc;
     
     // Copy args to procTable entry
     if (arg == NULL) {
-        p3ProcTable[kidpid % MAXPROC].args[0] = 0;
+        p3ProcTable[kidPID % MAXPROC].args[0] = 0;
     } else {
-        strcpy(p3ProcTable[kidpid % MAXPROC].args, arg);
+        strcpy(p3ProcTable[kidPID % MAXPROC].args, arg);
     }
     
     // Add child to child list FIXME: I may need to add new child to back of list
-    p3ProcTable[kidpid % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
-    p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidpid % MAXPROC];
+    p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
+    p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
     
     // Cond Send to mailbox
-    MboxCondSend(p3ProcTable[kidpid % MAXPROC].mboxID, NULL, 0);
+    MboxCondSend(p3ProcTable[kidPID % MAXPROC].mboxID, NULL, 0);
     
-    return kidpid;
+    return kidPID;
 }
 
-
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - spawnLaunch
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 int spawnLaunch(char * args) {
     
     // If child has higher priority than its parent, Create index in proc table, Create MailBox
@@ -155,27 +188,84 @@ int spawnLaunch(char * args) {
     if (p3ProcTable[myPID % MAXPROC].status == EMPTY) {
         int mboxID =MboxCreate(0, 0);
         p3ProcTable[myPID % MAXPROC].mboxID = mboxID;
-        p3ProcTable[myPID % MAXPROC].status = USED;
+        p3ProcTable[myPID % MAXPROC].status = ACTIVE;
         MboxReceive(mboxID, NULL, 0);
     }
-    // FIXME: SetUserMode();
+    setUserMode();
     // Call the process' startFunc with the given args
     p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
     return -404;
 }
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - wait
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void wait(USLOSS_Sysargs * args){
 
-void wait(USLOSS_Sysargs *sysargs){
     //check
+    if ((long) args->number != SYS_WAIT) {
+        args->arg2 = (void *) -1;
+        return;
+    }
     
     //call waitReal
+    int status;
+    int kidPID = waitReal(&status);
     
+    p3ProcTable[getpid() % MAXPROC].status = ACTIVE;
     
     //setup args for return
-    //switch back to usr mode
-}
-int waitReal(int * temp) {
-    return -404;
+    if (kidPID == -2) {
+        args->arg1 = (void *) 0;
+        args->arg2 = (void *) -2;
+    }
+    else {
+        args->arg1 = ((void *) (long) kidPID);
+        args->arg2 = ((void *) (long) status);
+    }
+    setUserMode();
 }
 
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - waitReal
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+int waitReal(int * status) {
+    p3ProcTable[getpid() % MAXPROC].status = WAIT_BLOCK;
+    return join(status);
+}
 
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - Terminate
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void terminate(USLOSS_Sysargs * args) {
+    
+}
+
+void nullsys3(USLOSS_Sysargs *sysargs) {
+    
+}
+
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - setUserMode
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void setUserMode() {
+    if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
+        USLOSS_Console("ERROR: setUserMode(): Failed to chance to User Mode.");
+    }
+}
