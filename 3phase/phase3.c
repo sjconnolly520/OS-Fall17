@@ -19,7 +19,7 @@ int spawnLaunch(char *);
 
 void nullsys3(USLOSS_Sysargs *);
 int waitReal(int*);
-void wait(USLOSS_Sysargs *);
+void wait1(USLOSS_Sysargs *);
 
 void terminate(USLOSS_Sysargs *);
 
@@ -43,7 +43,7 @@ int start2(char *arg) {
     // Initialize systemCallVec array with appropriate system call functions
     // initialize systemCallVec to system call functions
     systemCallVec[SYS_SPAWN] = spawn;
-    systemCallVec[SYS_WAIT] = wait;
+    systemCallVec[SYS_WAIT] = wait1;
     systemCallVec[SYS_TERMINATE] = terminate;
     systemCallVec[SYS_SEMCREATE] = nullsys3;
     systemCallVec[SYS_SEMP] = nullsys3;
@@ -204,7 +204,7 @@ int spawnLaunch(char * args) {
  Returns     - nothing
  Side Effects - none
  ----------------------------------------------------------------------- */
-void wait(USLOSS_Sysargs * args){
+void wait1(USLOSS_Sysargs * args){
 
     //check
     if ((long) args->number != SYS_WAIT) {
