@@ -29,11 +29,11 @@ struct p3Proc{
     
 };
 
-struct semStruct{
+typedef struct semStruct{
 	int             status;
     int             mboxID;
     int				flags;
     
     p3ProcPtr       blockList;
-};
+} semStruct;
 #endif /* sems_h */

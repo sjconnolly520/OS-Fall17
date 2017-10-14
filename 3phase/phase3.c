@@ -12,6 +12,7 @@
 
 int start2(char*);
 extern int start3(char*);
+extern void Terminate(int);
 
 void spawn(USLOSS_Sysargs *);
 int spawnReal(char *, int (*startFunc)(char *), char *, int, int );
@@ -24,8 +25,13 @@ void wait1(USLOSS_Sysargs *);
 void terminate(USLOSS_Sysargs *);
 void terminateReal(int status);
 
+void semCreate(USLOSS_Sysargs *);
+
+void semP(USLOSS_Sysargs *);
+void semV(USLOSS_Sysargs *);
 
 void setUserMode(void);
+
 
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
@@ -41,6 +47,7 @@ int start2(char *arg) {
     /*
      * Data structure initialization as needed...
      */
+    // Initialize Process Table Entries
     for(int i = 0; i < MAXPROC; i++){
     	p3ProcTable[i].status 		= EMPTY;
     	p3ProcTable[i].mboxID 		= -1;
@@ -50,8 +57,7 @@ int start2(char *arg) {
     	p3ProcTable[i].nextSibling 	= NULL;
     }
     
-    //init sem table
-    
+    // Initialize Semaphore Table Entries
     for(int i = 0; i < MAXSEMS; i++){
     	semStructTable[i].status 	= EMPTY;
     	semStructTable[i].mboxID 	= -1;
@@ -59,17 +65,17 @@ int start2(char *arg) {
     	semStructTable[i].blockList = NULL;
     }
     
-    // Initialize systemCallVec array with appropriate system call functions
+    // Initialize systemCallVec array to nullsys3
     for(int i = 0; i < USLOSS_MAX_SYSCALLS; i++){
     	systemCallVec[i] = nullsys3;
     }
-    // initialize systemCallVec to system call functions
+    // Initialize systemCallVec with appropriate system call functions
     systemCallVec[SYS_SPAWN] = spawn;
     systemCallVec[SYS_WAIT] = wait1;
     systemCallVec[SYS_TERMINATE] = terminate;
-    systemCallVec[SYS_SEMCREATE] = nullsys3;
-    systemCallVec[SYS_SEMP] = nullsys3;
-    systemCallVec[SYS_SEMV] = nullsys3;
+    systemCallVec[SYS_SEMCREATE] = semCreate;
+    systemCallVec[SYS_SEMP] = semP;
+    systemCallVec[SYS_SEMV] = semV;
     systemCallVec[SYS_SEMFREE] = nullsys3;
     systemCallVec[SYS_GETPID] = nullsys3;
     systemCallVec[SYS_GETTIMEOFDAY] = nullsys3;
@@ -324,21 +330,61 @@ void nullsys3(USLOSS_Sysargs *sysargs) {
 
 
 void semCreate(USLOSS_Sysargs * args) {
-    // --- Error checking. Out of range, all sems used.
+    // Error checking. Out of range, all sems used.
+    // If semaphore flags is negative, fail to create semaphore
+    if ((long) args->arg1 < 0) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
     
-    // --- Initialize semaphore values: value, blocked list, status (mailbox?)
+//    USLOSS_Console("HELLO");
+    
+    // Initialize semaphore values: value, blocked list, status (mailbox?)
+    int semIndex;
+    for(semIndex = 0; semIndex < MAXSEMS; semIndex++) {
+        if (semStructTable[semIndex].status == EMPTY) {
+            semStructTable[semIndex].status = ACTIVE;
+            semStructTable[semIndex].flags = (long) args->arg1;
+            semStructTable[semIndex].mboxID = MboxCreate(1, 0);
+            break;
+        }
+    }
+    
+    // No more available slots in semTable
+    if (semIndex >= MAXSEMS) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
+    
+//    USLOSS_Console("Index in SemTable is %d, PID is %d\n", semIndex, getpid());
     
     // --- Output
+    args->arg4 = ((void *) (long) 0);
+    args->arg1 = ((void *) (long) semIndex);
     
     setUserMode();
 }
 
+void semCreateReal() {
+    
+}
+
 void semP(USLOSS_Sysargs * args) {
     // --- Error checking. Out of range, sem not active.
+    int semIndex = args->arg1;
+    if (semIndex < -1 || semIndex > MAXSEMS) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
     
-    // --- Value -= 1
+    if (semStructTable[semIndex].status != ACTIVE) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
     
     // --- Enter critical section of code. Mutex send.
+    
+    // --- Value -= 1
     
     // --- If sem value < 0, block process on semBlockList.
         // --- Release mutex.

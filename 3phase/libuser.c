@@ -120,8 +120,17 @@ void Terminate(int status)
  */
 int SemCreate(int value, int *semaphore)
 {
-    int something = 0;
-    return something;
+    USLOSS_Sysargs sysArg;
+    
+    CHECKMODE;
+    sysArg.number = SYS_SEMCREATE;
+    sysArg.arg1 = ((void *) (long) value);
+    
+    USLOSS_Syscall(&sysArg);
+    
+    *semaphore = (int)(long) sysArg.arg1;
+    return (int) (long) (sysArg.arg4);
+    
 } /* end of SemCreate */
 
 
@@ -133,10 +142,17 @@ int SemCreate(int value, int *semaphore)
  *  Arguments:
  *
  */
-int SemP(int semaphore)
-{
-    int something = 0;
-    return something;
+int SemP(int semaphore) {
+    
+    USLOSS_Sysargs sysArg;
+    
+    CHECKMODE;
+    sysArg.number = SYS_SEMP;
+    sysArg.arg1 = ((void *) (long) semaphore);
+    
+    USLOSS_Syscall(&sysArg);
+    
+    return (int)(long) sysArg.arg4;
 } /* end of SemP */
 
 
@@ -148,10 +164,17 @@ int SemP(int semaphore)
  *  Arguments:
  *
  */
-int SemV(int semaphore)
-{
-    int something = 0;
-    return something;
+int SemV(int semaphore) {
+    
+    USLOSS_Sysargs sysArg;
+    
+    CHECKMODE;
+    sysArg.number = SYS_SEMV;
+    sysArg.arg1 = ((void *) (long) semaphore);
+    
+    USLOSS_Syscall(&sysArg);
+    
+    return (int)(long) sysArg.arg4;
 } /* end of SemV */
 
 
