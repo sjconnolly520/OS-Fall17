@@ -169,7 +169,7 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     }
     
     // Add child to child list FIXME: I may need to add new child to back of list
-    p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
+    p3ProcTable[kidPID % MAXPROC].nextSibling = &p3ProcTable[getpid() % MAXPROC].children;
     p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
     
     // Cond Send to mailbox
@@ -273,7 +273,10 @@ void terminateReal(int status){
 	
 	//zap loop
 	while(current->children != NULL){
-		zap(current->children->pid);
+		if (current->children->status == ACTIVE){
+			current->children->status = EMPTY;
+			zap(current->children->pid);
+		}
 		current->children = current->children->nextSibling;
 	}
 
