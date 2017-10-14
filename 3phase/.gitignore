@@ -1,3 +1,5 @@
 libpatrickphase1.a
+libpatrickphase1debug.a
 libpatrickphase2.a
+libpatrickphase2debug.a
 Makefile

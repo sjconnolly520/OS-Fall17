@@ -86,15 +86,29 @@ int start2(char *arg) {
      * return to the user code that called Spawn.
      */
     pid = spawnReal("start3", start3, NULL, USLOSS_MIN_STACK, 3);
+<<<<<<< HEAD
 	if (pid < 0){
 		USLOSS_Console("start2(): spawnReal() return -1. Halting...");
 		USLOSS_Halt(1);
 	}
+=======
+    
+    // If failed to create start3 process
+    if (pid < 0) {
+        quit(pid);
+    }
+    
+>>>>>>> master
     /* Call the waitReal version of your wait code here.
      * You call waitReal (rather than Wait) because start2 is running
      * in kernel (not user) mode.
      */
     pid = waitReal(&status);
+    
+    // failed to join with start3 child process
+    if (pid < 0) {
+        quit(pid);
+    }
     
     quit(0);
     return 0;
@@ -126,7 +140,11 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
+<<<<<<< HEAD
     long pid = spawnReal(sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
+=======
+    long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (long) sysargs->arg3, (long) sysargs->arg4);
+>>>>>>> master
     
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
@@ -175,7 +193,7 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     }
     
     // Add child to child list FIXME: I may need to add new child to back of list
-    p3ProcTable[kidPID % MAXPROC].nextSibling = &p3ProcTable[getpid() % MAXPROC].children;
+    p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
     p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
     
     // Cond Send to mailbox
@@ -205,10 +223,12 @@ int spawnLaunch(char * args) {
     // Call the process' startFunc with the given args
     p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
+    // FIXME: Do we then Terminate the the current Process? Since its function has finished?
+    
     return -404;
 }
 /* ------------------------------------------------------------------------ FIXME: Block comment
- Name - wait
+ Name - wait1
  Purpose     - kernel mode version of spawn.
  Parameters  - USLOSS_Systemarg
  Returns     - nothing
@@ -253,7 +273,7 @@ int waitReal(int * status) {
 }
 
 /* ------------------------------------------------------------------------ FIXME: Block comment
- Name - Terminate
+ Name - terminate
  Purpose     - kernel mode version of spawn.
  Parameters  - USLOSS_Systemarg
  Returns     - nothing
@@ -277,7 +297,7 @@ void terminateReal(int status){
 	int myPID = getpid();
 	p3ProcPtr current = &p3ProcTable[myPID % MAXPROC];
 	
-	//zap loop
+	// Zap all of the calling process' active children
 	while(current->children != NULL){
 		if (current->children->status == ACTIVE){
 			current->children->status = EMPTY;
@@ -286,12 +306,57 @@ void terminateReal(int status){
 		current->children = current->children->nextSibling;
 	}
 
-	current->status = EMPTY;
-	
+    current->status = EMPTY;
 	quit(status);
 }
 void nullsys3(USLOSS_Sysargs *sysargs) {
     
+}
+
+
+void semCreate(USLOSS_Sysargs * args) {
+    // --- Error checking. Out of range, all sems used.
+    
+    // --- Initialize semaphore values: value, blocked list, status (mailbox?)
+    
+    // --- Output
+    
+    setUserMode();
+}
+
+void semP(USLOSS_Sysargs * args) {
+    // --- Error checking. Out of range, sem not active.
+    
+    // --- Value -= 1
+    
+    // --- Enter critical section of code. Mutex send.
+    
+    // --- If sem value < 0, block process on semBlockList.
+        // --- Release mutex.
+        // --- Block on private mailbox.
+    // --- Else, release mutex
+    
+    // --- Output
+    
+    setUserMode();
+}
+
+void semV(USLOSS_Sysargs * args) {
+    // --- Error checking. Out of range, sem not active.
+    
+    // --- Value += 1
+    
+    // --- Enter critical section of code. Mutex send.
+    
+    // --- If process blocked on semaphore, unblock first
+        // --- Remove first from block list
+        // --- Mutex release
+        // --- Send to blockedProc's private mailbox
+    // --- Else, release mutex
+    
+    // --- Output
+    
+    setUserMode();
 }
 
 /* ------------------------------------------------------------------------ FIXME: Block comment
