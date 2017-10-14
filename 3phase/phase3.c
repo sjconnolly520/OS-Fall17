@@ -86,19 +86,13 @@ int start2(char *arg) {
      * return to the user code that called Spawn.
      */
     pid = spawnReal("start3", start3, NULL, USLOSS_MIN_STACK, 3);
-<<<<<<< HEAD
-	if (pid < 0){
-		USLOSS_Console("start2(): spawnReal() return -1. Halting...");
-		USLOSS_Halt(1);
-	}
-=======
+
     
     // If failed to create start3 process
     if (pid < 0) {
         quit(pid);
     }
     
->>>>>>> master
     /* Call the waitReal version of your wait code here.
      * You call waitReal (rather than Wait) because start2 is running
      * in kernel (not user) mode.
@@ -140,11 +134,8 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
-<<<<<<< HEAD
-    long pid = spawnReal(sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
-=======
+
     long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (long) sysargs->arg3, (long) sysargs->arg4);
->>>>>>> master
     
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
@@ -210,15 +201,17 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
  Side Effects - none
  ----------------------------------------------------------------------- */
 int spawnLaunch(char * args) {
-    
+    USLOSS_Console("spawnL(): %d \n ", getpid());
     // If child has higher priority than its parent, Create index in proc table, Create MailBox
     int myPID = getpid();
     if (p3ProcTable[myPID % MAXPROC].status == EMPTY) {
-        int mboxID =MboxCreate(0, 0);
+        int mboxID = MboxCreate(0, 0);
+        USLOSS_Console("spawnL(): %d \n ", mboxID);
         p3ProcTable[myPID % MAXPROC].mboxID = mboxID;
         p3ProcTable[myPID % MAXPROC].status = ACTIVE;
         MboxReceive(mboxID, NULL, 0);
     }
+    USLOSS_Console("spawnL(): %d \n ", getpid());
     setUserMode();
     // Call the process' startFunc with the given args
     p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
