@@ -28,9 +28,11 @@ void terminateReal(int status);
 void semCreate(USLOSS_Sysargs *);
 
 void semP(USLOSS_Sysargs *);
+
 void semV(USLOSS_Sysargs *);
 
 void setUserMode(void);
+void addToSemphoreBlockedList(int, int);
 
 
 /* ----------- Globals ------------- */
@@ -49,12 +51,13 @@ int start2(char *arg) {
      */
     // Initialize Process Table Entries
     for(int i = 0; i < MAXPROC; i++){
-    	p3ProcTable[i].status 		= EMPTY;
-    	p3ProcTable[i].mboxID 		= -1;
-    	p3ProcTable[i].pid 			= -1;
+    	p3ProcTable[i].status 			= EMPTY;
+    	p3ProcTable[i].mboxID 			= -1;
+    	p3ProcTable[i].pid 				= -1;
     	
-    	p3ProcTable[i].children 	= NULL;
-    	p3ProcTable[i].nextSibling 	= NULL;
+    	p3ProcTable[i].children 		= NULL;
+    	p3ProcTable[i].nextSibling 		= NULL;
+    	p3ProcTable[i].nextSemBlocked 	= NULL;
     }
     
     // Initialize Semaphore Table Entries
@@ -371,7 +374,7 @@ void semCreateReal() {
 
 void semP(USLOSS_Sysargs * args) {
     // --- Error checking. Out of range, sem not active.
-    int semIndex = args->arg1;
+    int semIndex = (int)(long)args->arg1;
     if (semIndex < -1 || semIndex > MAXSEMS) {
         args->arg4 = ((void *) (long) -1);
         return;
@@ -383,19 +386,36 @@ void semP(USLOSS_Sysargs * args) {
     }
     
     // --- Enter critical section of code. Mutex send.
+    int mutex_mboxID = semStructTable[semIndex].mboxID;
     
-    // --- Value -= 1
+    MboxSend(mutex_mboxID, NULL, 0);
     
-    // --- If sem value < 0, block process on semBlockList.
-        // --- Release mutex.
-        // --- Block on private mailbox.
-    // --- Else, release mutex
+    semStructTable[semIndex].flags--;
+    if(semStructTable[semIndex].flags < 0){
+    	addToSemphoreBlockedList(getpid(), semIndex); 
+    	MboxReceive(mutex_mboxID, NULL, 0);
+    	MboxSend(p3ProcTable[getpid() % MAXPROC].mboxID, NULL, 0);
+    }else{
+    	MboxReceive(mutex_mboxID, NULL, 0);
+    }
+    
     
     // --- Output
-    
+    args->arg4 = 0;
     setUserMode();
 }
 
+void addToSemphoreBlockedList(int pid, int semIndex){
+	p3ProcPtr inInsert  = &p3ProcTable[pid % MAXPROC];
+	p3ProcPtr walk = semStructTable[semIndex].blockList;
+	if (walk == NULL) semStructTable[semIndex].blockList = inInsert;
+	else{
+		while(walk->nextSemBlocked != NULL){
+			walk = walk->nextSemBlocked; 
+		}	
+		walk->nextSemBlocked = inInsert;
+	}
+}
 void semV(USLOSS_Sysargs * args) {
     // --- Error checking. Out of range, sem not active.
     
