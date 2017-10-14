@@ -28,4 +28,12 @@ struct p3Proc{
     char            args[MAXARG];
     
 };
+
+struct semStruct{
+	int             status;
+    int             mboxID;
+    int				flags;
+    
+    p3ProcPtr       blockList;
+};
 #endif /* sems_h */

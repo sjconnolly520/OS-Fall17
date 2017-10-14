@@ -29,6 +29,7 @@ void setUserMode(void);
 
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
+semStruct semStructTable[MAXSEMS];
 
 int start2(char *arg) {
     int pid;
@@ -40,6 +41,23 @@ int start2(char *arg) {
     /*
      * Data structure initialization as needed...
      */
+    for(int i = 0; i < MAXPROC; i++){
+    	p3ProcTable[i].status 		= EMPTY;
+    	p3ProcTable[i].mboxID 		= -1;
+    	p3ProcTable[i].pid 			= -1;
+    	
+    	p3ProcTable[i].children 	= NULL;
+    	p3ProcTable[i].nextSibling 	= NULL;
+    }
+    
+    //init sem table
+    
+    for(int i = 0; i < MAXSEMS; i++){
+    	semStructTable[i].status 	= EMPTY;
+    	semStructTable[i].mboxID 	= -1;
+    	semStructTable[i].flags 	= -1;
+    	semStructTable[i].blockList = NULL;
+    }
     
     // Initialize systemCallVec array with appropriate system call functions
     for(int i = 0; i < USLOSS_MAX_SYSCALLS; i++){
@@ -201,23 +219,21 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
  Side Effects - none
  ----------------------------------------------------------------------- */
 int spawnLaunch(char * args) {
-    USLOSS_Console("spawnL(): %d \n ", getpid());
     // If child has higher priority than its parent, Create index in proc table, Create MailBox
     int myPID = getpid();
     if (p3ProcTable[myPID % MAXPROC].status == EMPTY) {
         int mboxID = MboxCreate(0, 0);
-        USLOSS_Console("spawnL(): %d \n ", mboxID);
         p3ProcTable[myPID % MAXPROC].mboxID = mboxID;
         p3ProcTable[myPID % MAXPROC].status = ACTIVE;
         MboxReceive(mboxID, NULL, 0);
     }
-    USLOSS_Console("spawnL(): %d \n ", getpid());
+    
     setUserMode();
     // Call the process' startFunc with the given args
-    p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
+    int result = p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
     // FIXME: Do we then Terminate the the current Process? Since its function has finished?
-    
+    Terminate(result);
     return -404;
 }
 /* ------------------------------------------------------------------------ FIXME: Block comment
