@@ -44,11 +44,12 @@ int Spawn(char *name, int (*func)(char *), char *arg, int stack_size,
     sysArg.number = SYS_SPAWN;
     sysArg.arg1 = (void *) func;
     sysArg.arg2 = arg;
-    sysArg.arg3 = ((void *) (long) stack_size);
-    sysArg.arg4 = ((void *) (long) priority);
+    sysArg.arg3 = (void *)(long)stack_size;
+    sysArg.arg4 = (void *)(long)priority;
     sysArg.arg5 = name;
 
     USLOSS_Syscall(&sysArg);
+
 
     *pid = (long) sysArg.arg1;
     return (long) sysArg.arg4;
@@ -76,6 +77,7 @@ int Wait(int *pid, int *status)
     sysArg.number = SYS_WAIT;
 
     USLOSS_Syscall(&sysArg);
+
 
     *pid = (long) sysArg.arg1;
     *status = (long) sysArg.arg2;
