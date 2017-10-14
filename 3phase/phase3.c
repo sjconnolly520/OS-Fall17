@@ -209,6 +209,8 @@ int spawnLaunch(char * args) {
     // Call the process' startFunc with the given args
     p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
+    // FIXME: Do we then Terminate the the current Process? Since its function has finished?
+    
     return -404;
 }
 /* ------------------------------------------------------------------------ FIXME: Block comment
@@ -281,7 +283,7 @@ void terminateReal(int status){
 	int myPID = getpid();
 	p3ProcPtr current = &p3ProcTable[myPID % MAXPROC];
 	
-	//zap loop
+	// Zap all of the calling process' active children
 	while(current->children != NULL){
 		if (current->children->status == ACTIVE){
 			current->children->status = EMPTY;
@@ -290,12 +292,57 @@ void terminateReal(int status){
 		current->children = current->children->nextSibling;
 	}
 
-	current->status = EMPTY;
-	
+    current->status = EMPTY;
 	quit(status);
 }
 void nullsys3(USLOSS_Sysargs *sysargs) {
     
+}
+
+
+void semCreate(USLOSS_Sysargs * args) {
+    // --- Error checking. Out of range, all sems used.
+    
+    // --- Initialize semaphore values: value, blocked list, status (mailbox?)
+    
+    // --- Output
+    
+    setUserMode();
+}
+
+void semP(USLOSS_Sysargs * args) {
+    // --- Error checking. Out of range, sem not active.
+    
+    // --- Value -= 1
+    
+    // --- Enter critical section of code. Mutex send.
+    
+    // --- If sem value < 0, block process on semBlockList.
+        // --- Release mutex.
+        // --- Block on private mailbox.
+    // --- Else, release mutex
+    
+    // --- Output
+    
+    setUserMode();
+}
+
+void semV(USLOSS_Sysargs * args) {
+    // --- Error checking. Out of range, sem not active.
+    
+    // --- Value += 1
+    
+    // --- Enter critical section of code. Mutex send.
+    
+    // --- If process blocked on semaphore, unblock first
+        // --- Remove first from block list
+        // --- Mutex release
+        // --- Send to blockedProc's private mailbox
+    // --- Else, release mutex
+    
+    // --- Output
+    
+    setUserMode();
 }
 
 /* ------------------------------------------------------------------------ FIXME: Block comment

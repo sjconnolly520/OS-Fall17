@@ -50,8 +50,8 @@ int Spawn(char *name, int (*func)(char *), char *arg, int stack_size,
 
     USLOSS_Syscall(&sysArg);
 
-    *pid = (int) sysArg.arg1;
-    return (int) sysArg.arg4;
+    *pid = (long) sysArg.arg1;
+    return (long) sysArg.arg4;
 } /* end of Spawn */
 
 
@@ -77,9 +77,9 @@ int Wait(int *pid, int *status)
 
     USLOSS_Syscall(&sysArg);
 
-    *pid = (int) sysArg.arg1;
-    *status = (int) sysArg.arg2;
-    return (int) sysArg.arg4;
+    *pid = (long) sysArg.arg1;
+    *status = (long) sysArg.arg2;
+    return (long) sysArg.arg4;
     
 } /* end of Wait */
 
