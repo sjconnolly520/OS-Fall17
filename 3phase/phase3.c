@@ -32,7 +32,7 @@ p3Proc p3ProcTable[MAXPROC];
 
 int start2(char *arg) {
     int pid;
-    int status;
+	int status;
     /*
      * Check kernel mode here.
      */
@@ -42,6 +42,9 @@ int start2(char *arg) {
      */
     
     // Initialize systemCallVec array with appropriate system call functions
+    for(int i = 0; i < USLOSS_MAX_SYSCALLS; i++){
+    	systemCallVec[i] = nullsys3;
+    }
     // initialize systemCallVec to system call functions
     systemCallVec[SYS_SPAWN] = spawn;
     systemCallVec[SYS_WAIT] = wait1;
@@ -83,7 +86,10 @@ int start2(char *arg) {
      * return to the user code that called Spawn.
      */
     pid = spawnReal("start3", start3, NULL, USLOSS_MIN_STACK, 3);
-    
+	if (pid < 0){
+		USLOSS_Console("start2(): spawnReal() return -1. Halting...");
+		USLOSS_Halt(1);
+	}
     /* Call the waitReal version of your wait code here.
      * You call waitReal (rather than Wait) because start2 is running
      * in kernel (not user) mode.
@@ -120,7 +126,7 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
-    long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
+    long pid = spawnReal(sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
     
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
