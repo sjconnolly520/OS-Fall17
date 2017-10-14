@@ -22,6 +22,7 @@ int waitReal(int*);
 void wait1(USLOSS_Sysargs *);
 
 void terminate(USLOSS_Sysargs *);
+void terminateReal(int status);
 
 
 void setUserMode(void);
@@ -157,6 +158,9 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     strcpy(p3ProcTable[kidPID % MAXPROC].name, name);
     p3ProcTable[kidPID % MAXPROC].startFunc = startFunc;
     
+    //set pid
+    p3ProcTable[kidPID % MAXPROC].pid = kidPID;
+    
     // Copy args to procTable entry
     if (arg == NULL) {
         p3ProcTable[kidPID % MAXPROC].args[0] = 0;
@@ -165,7 +169,7 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     }
     
     // Add child to child list FIXME: I may need to add new child to back of list
-    p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
+    p3ProcTable[kidPID % MAXPROC].nextSibling = &p3ProcTable[getpid() % MAXPROC].children;
     p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
     
     // Cond Send to mailbox
@@ -250,9 +254,36 @@ int waitReal(int * status) {
  Side Effects - none
  ----------------------------------------------------------------------- */
 void terminate(USLOSS_Sysargs * args) {
-    
+    //check
+    if ((long) args->number != SYS_TERMINATE) {
+        args->arg2 = (void *) -1;
+        return;
+    }
+    	
+    //call tReal
+    if (args->arg1){
+    	terminateReal((int)(long)args->arg1);
+    }
 }
 
+void terminateReal(int status){
+	
+	int myPID = getpid();
+	p3ProcPtr current = &p3ProcTable[myPID % MAXPROC];
+	
+	//zap loop
+	while(current->children != NULL){
+		if (current->children->status == ACTIVE){
+			current->children->status = EMPTY;
+			zap(current->children->pid);
+		}
+		current->children = current->children->nextSibling;
+	}
+
+	current->status = EMPTY;
+	
+	quit(status);
+}
 void nullsys3(USLOSS_Sysargs *sysargs) {
     
 }

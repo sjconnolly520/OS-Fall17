@@ -18,6 +18,7 @@ typedef struct p3Proc *p3ProcPtr;
 struct p3Proc{
     int             status;
     int             mboxID;
+    int 			pid;
     
     p3ProcPtr       children;
     p3ProcPtr       nextSibling;
