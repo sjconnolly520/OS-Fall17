@@ -84,11 +84,21 @@ int start2(char *arg) {
      */
     pid = spawnReal("start3", start3, NULL, USLOSS_MIN_STACK, 3);
     
+    // If failed to create start3 process
+    if (pid < 0) {
+        quit(pid);
+    }
+    
     /* Call the waitReal version of your wait code here.
      * You call waitReal (rather than Wait) because start2 is running
      * in kernel (not user) mode.
      */
     pid = waitReal(&status);
+    
+    // failed to join with start3 child process
+    if (pid < 0) {
+        quit(pid);
+    }
     
     quit(0);
     return 0;
@@ -120,7 +130,7 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
-    long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (int) sysargs->arg3, (int) sysargs->arg4);
+    long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (long) sysargs->arg3, (long) sysargs->arg4);
     
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
@@ -169,7 +179,7 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     }
     
     // Add child to child list FIXME: I may need to add new child to back of list
-    p3ProcTable[kidPID % MAXPROC].nextSibling = &p3ProcTable[getpid() % MAXPROC].children;
+    p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
     p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
     
     // Cond Send to mailbox
