@@ -38,6 +38,8 @@ void removeFromSemaphoreBlockedList(int,int);
 void getpid1(USLOSS_Sysargs *);
 
 void semFree(USLOSS_Sysargs *);
+void getTimeOfDay(USLOSS_Sysargs *);
+void cputime(USLOSS_Sysargs *);
 
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
@@ -85,8 +87,8 @@ int start2(char *arg) {
     systemCallVec[SYS_SEMV] = semV;
     systemCallVec[SYS_SEMFREE] = semFree;
     systemCallVec[SYS_GETPID] = getpid1;
-    systemCallVec[SYS_GETTIMEOFDAY] = nullsys3;
-    systemCallVec[SYS_CPUTIME] = nullsys3;
+    systemCallVec[SYS_GETTIMEOFDAY] = getTimeOfDay;
+    systemCallVec[SYS_CPUTIME] = cputime;
     
     /*
      * Create first user-level process and wait for it to finish.
@@ -407,6 +409,9 @@ void semP(USLOSS_Sysargs * args) {
     
     // --- Output
     args->arg4 = 0;
+    if (isZapped() || semStructTable[semIndex].status == EMPTY){
+    	terminateReal(0);
+    }
     setUserMode();
 }
 
@@ -471,7 +476,7 @@ void semV(USLOSS_Sysargs * args) {
  ----------------------------------------------------------------------- */
 void setUserMode() {
     if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
-        USLOSS_Console("ERROR: setUserMode(): Failed to chance to User Mode.");
+        USLOSS_Console("ERROR: setUserMode(): Failed to change to User Mode.\n");
     }
 }
 
@@ -516,7 +521,6 @@ void semFree(USLOSS_Sysargs * args){
 		while(walk != NULL){
 			p3ProcPtr temp = walk->nextSemBlocked;
 			MboxReceive(walk->mboxID, NULL, 0);
-			zap(walk->pid);
 			walk = temp; 
 		}	
 		args->arg4 = ((void *) (long) 1);
@@ -525,4 +529,18 @@ void semFree(USLOSS_Sysargs * args){
 	}
    
    	setUserMode();
+}
+
+void getTimeOfDay(USLOSS_Sysargs * args){
+	int currentTime;
+	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
+    	USLOSS_Console("USLOSS_DeviceInput() != USLOSS_DEV_OK \n");
+	}
+	args->arg1 = (void *)(long)currentTime;
+	setUserMode();
+}
+
+void cputime(USLOSS_Sysargs *args){
+	args->arg1 = (void *)(long)readtime();
+	setUserMode();
 }
