@@ -37,6 +37,8 @@ void removeFromSemaphoreBlockedList(int,int);
 
 void getpid1(USLOSS_Sysargs *);
 
+void semFree(USLOSS_Sysargs *);
+
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
 semStruct semStructTable[MAXSEMS];
@@ -81,7 +83,7 @@ int start2(char *arg) {
     systemCallVec[SYS_SEMCREATE] = semCreate;
     systemCallVec[SYS_SEMP] = semP;
     systemCallVec[SYS_SEMV] = semV;
-    systemCallVec[SYS_SEMFREE] = nullsys3;
+    systemCallVec[SYS_SEMFREE] = semFree;
     systemCallVec[SYS_GETPID] = getpid1;
     systemCallVec[SYS_GETTIMEOFDAY] = nullsys3;
     systemCallVec[SYS_CPUTIME] = nullsys3;
@@ -462,7 +464,7 @@ void semV(USLOSS_Sysargs * args) {
 
 /* ------------------------------------------------------------------------ FIXME: Block comment
  Name - setUserMode
- Purpose     - kernel mode version of spawn.
+ Purpose     - kernel mode version of setUserMode.
  Parameters  - USLOSS_Systemarg
  Returns     - nothing
  Side Effects - none
@@ -473,7 +475,54 @@ void setUserMode() {
     }
 }
 
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - getpid1
+ Purpose     - kernel mode version of getpid.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void getpid1(USLOSS_Sysargs * args){
 	args->arg1 = (void *)(long)getpid();
 	setUserMode();
+}
+
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - semFree
+ Purpose     - kernel mode version of semFree.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void semFree(USLOSS_Sysargs * args){
+	int semIndex = (int)(long)args->arg1;
+    if (semIndex < -1 || semIndex > MAXSEMS) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
+    
+    if (semStructTable[semIndex].status == EMPTY ) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
+    
+    // --- Enter critical section of code. Mutex send.
+    //int mutex_mboxID = semStructTable[semIndex].mboxID;
+    
+    semStructTable[semIndex].status = EMPTY;
+    
+    if (semStructTable[semIndex].flags < 0){
+    	p3ProcPtr walk = semStructTable[semIndex].blockList;
+		while(walk != NULL){
+			p3ProcPtr temp = walk->nextSemBlocked;
+			MboxReceive(walk->mboxID, NULL, 0);
+			zap(walk->pid);
+			walk = temp; 
+		}	
+		args->arg4 = ((void *) (long) 1);
+	}else {
+		args->arg4 = ((void *) (long) 0);
+	}
+   
+   	setUserMode();
 }
