@@ -33,7 +33,9 @@ void semV(USLOSS_Sysargs *);
 
 void setUserMode(void);
 void addToSemphoreBlockedList(int, int);
+void removeFromSemaphoreBlockedList(int,int);
 
+void getpid1(USLOSS_Sysargs *);
 
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
@@ -80,7 +82,7 @@ int start2(char *arg) {
     systemCallVec[SYS_SEMP] = semP;
     systemCallVec[SYS_SEMV] = semV;
     systemCallVec[SYS_SEMFREE] = nullsys3;
-    systemCallVec[SYS_GETPID] = nullsys3;
+    systemCallVec[SYS_GETPID] = getpid1;
     systemCallVec[SYS_GETTIMEOFDAY] = nullsys3;
     systemCallVec[SYS_CPUTIME] = nullsys3;
     
@@ -391,6 +393,7 @@ void semP(USLOSS_Sysargs * args) {
     MboxSend(mutex_mboxID, NULL, 0);
     
     semStructTable[semIndex].flags--;
+    
     if(semStructTable[semIndex].flags < 0){
     	addToSemphoreBlockedList(getpid(), semIndex); 
     	MboxReceive(mutex_mboxID, NULL, 0);
@@ -418,9 +421,32 @@ void addToSemphoreBlockedList(int pid, int semIndex){
 }
 void semV(USLOSS_Sysargs * args) {
     // --- Error checking. Out of range, sem not active.
+    int semIndex = (int)(long)args->arg1;
+    if (semIndex < -1 || semIndex > MAXSEMS) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
     
+    if (semStructTable[semIndex].status != ACTIVE) {
+        args->arg4 = ((void *) (long) -1);
+        return;
+    }
+    
+    // --- Enter critical section of code. Mutex send.
+    int mutex_mboxID = semStructTable[semIndex].mboxID;
+    
+    MboxSend(mutex_mboxID, NULL, 0);
     // --- Value += 1
-    
+    if(semStructTable[semIndex].flags < 0){
+    	semStructTable[semIndex].flags++;
+    	int blockedPID = semStructTable[semIndex].blockList->pid;
+    	semStructTable[semIndex].blockList = semStructTable[semIndex].blockList->nextSemBlocked;
+    	MboxReceive(p3ProcTable[blockedPID % MAXPROC].mboxID, NULL, 0);
+    	MboxReceive(mutex_mboxID, NULL, 0);
+    }else{
+    	semStructTable[semIndex].flags++;
+    	MboxReceive(mutex_mboxID, NULL, 0);
+    }
     // --- Enter critical section of code. Mutex send.
     
     // --- If process blocked on semaphore, unblock first
@@ -430,7 +456,7 @@ void semV(USLOSS_Sysargs * args) {
     // --- Else, release mutex
     
     // --- Output
-    
+    args->arg4 = 0;
     setUserMode();
 }
 
@@ -445,4 +471,9 @@ void setUserMode() {
     if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
         USLOSS_Console("ERROR: setUserMode(): Failed to chance to User Mode.");
     }
+}
+
+void getpid1(USLOSS_Sysargs * args){
+	args->arg1 = (void *)(long)getpid();
+	setUserMode();
 }
