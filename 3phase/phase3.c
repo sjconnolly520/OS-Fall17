@@ -217,9 +217,19 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     }
     
     // Add child to child list FIXME: I may need to add new child to back of list
-    p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
-    p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
+    //p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
+    //p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
     
+    p3ProcPtr walk = p3ProcTable[getpid() % MAXPROC].children;
+    if (walk == NULL){
+    	p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
+    }else{
+    	while(walk->nextSibling != NULL){ //1 2 3 
+    		walk = walk->nextSibling;
+    	}
+    	walk->nextSibling = &p3ProcTable[kidPID % MAXPROC];
+    }
+       
     // Cond Send to mailbox
     MboxCondSend(p3ProcTable[kidPID % MAXPROC].mboxID, NULL, 0);
     
@@ -243,6 +253,8 @@ int spawnLaunch(char * args) {
         MboxReceive(mboxID, NULL, 0);
     }
     
+    if (isZapped() ||p3ProcTable[myPID % MAXPROC].status == EMPTY )
+    	terminateReal(WASZAPPED);
     setUserMode();
     // Call the process' startFunc with the given args
     int result = p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
@@ -270,6 +282,11 @@ void wait1(USLOSS_Sysargs * args){
     int status;
     int kidPID = waitReal(&status);
     
+    //zapped while blocked on a join()
+    if (kidPID == -1) {
+        terminateReal(WASZAPPED);
+    }
+    
     p3ProcTable[getpid() % MAXPROC].status = ACTIVE;
     
     //setup args for return
@@ -281,6 +298,7 @@ void wait1(USLOSS_Sysargs * args){
         args->arg1 = ((void *) (long) kidPID);
         args->arg2 = ((void *) (long) status);
     }
+    if (isZapped()) terminateReal(WASZAPPED);
     setUserMode();
 }
 
@@ -321,6 +339,8 @@ void terminateReal(int status){
 	int myPID = getpid();
 	p3ProcPtr current = &p3ProcTable[myPID % MAXPROC];
 	
+	
+    
 	// Zap all of the calling process' active children
 	while(current->children != NULL){
 		if (current->children->status == ACTIVE){
@@ -410,7 +430,7 @@ void semP(USLOSS_Sysargs * args) {
     // --- Output
     args->arg4 = 0;
     if (isZapped() || semStructTable[semIndex].status == EMPTY){
-    	terminateReal(0);
+    	terminateReal(WASZAPPED);
     }
     setUserMode();
 }
