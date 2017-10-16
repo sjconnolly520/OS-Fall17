@@ -247,6 +247,7 @@ int spawnLaunch(char * args) {
     // If child has higher priority than its parent, Create index in proc table, Create MailBox
     int myPID = getpid();
     if (p3ProcTable[myPID % MAXPROC].status == EMPTY) {
+        USLOSS_Console("INSIDE IF STATEMENT: PID == %d\n", getpid());
         int mboxID = MboxCreate(0, 0);
         p3ProcTable[myPID % MAXPROC].mboxID = mboxID;
         p3ProcTable[myPID % MAXPROC].status = ACTIVE;
@@ -259,7 +260,6 @@ int spawnLaunch(char * args) {
     // Call the process' startFunc with the given args
     int result = p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
-    // FIXME: Do we then Terminate the the current Process? Since its function has finished?
     Terminate(result);
     return -404;
 }
