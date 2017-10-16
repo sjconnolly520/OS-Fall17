@@ -41,6 +41,8 @@ void semFree(USLOSS_Sysargs *);
 void getTimeOfDay(USLOSS_Sysargs *);
 void cputime(USLOSS_Sysargs *);
 
+void zapkids(p3ProcPtr);
+
 /* ----------- Globals ------------- */
 p3Proc p3ProcTable[MAXPROC];
 semStruct semStructTable[MAXSEMS];
@@ -342,13 +344,15 @@ void terminateReal(int status){
 	
     
 	// Zap all of the calling process' active children
-	while(current->children != NULL){
-		if (current->children->status == ACTIVE){
-			current->children->status = EMPTY;
-			zap(current->children->pid);
-		}
-		current->children = current->children->nextSibling;
-	}
+	zapkids(current->children);
+	// while(current->children != NULL){
+// 		if (current->children->status == ACTIVE){
+// 			current->children->status = EMPTY;
+// 			
+// 			zap(current->children->pid);
+// 		}
+// 		current->children = current->children->nextSibling;
+// 	}
 
     current->status = EMPTY;
 	quit(status);
@@ -563,4 +567,16 @@ void getTimeOfDay(USLOSS_Sysargs * args){
 void cputime(USLOSS_Sysargs *args){
 	args->arg1 = (void *)(long)readtime();
 	setUserMode();
+}
+
+void zapkids(p3ProcPtr children){
+	if (children == NULL) return;
+	
+	p3ProcPtr walk = children;
+	while( walk != NULL){
+		zapkids(walk->children);
+		if (walk->status == ACTIVE) zap(walk->pid);
+		walk = walk->nextSibling;
+	}
+	
 }
