@@ -53,6 +53,12 @@ int start2(char *arg) {
     /*
      * Check kernel mode here.
      */
+     
+    if (!(USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)) {
+        USLOSS_Console("start2(): called while in user mode. ");
+        USLOSS_Console("Halting...\n");
+        USLOSS_Halt(1);
+    }
     
     /*
      * Data structure initialization as needed...
@@ -330,9 +336,8 @@ void terminate(USLOSS_Sysargs * args) {
     }
     	
     //call tReal
-    if (args->arg1){
-    	terminateReal((int)(long)args->arg1);
-    }
+    terminateReal((int)(long)args->arg1);
+    
 }
 
 void terminateReal(int status){
@@ -357,7 +362,8 @@ void terminateReal(int status){
 	quit(status);
 }
 void nullsys3(USLOSS_Sysargs *sysargs) {
-    
+    //checking?
+    terminateReal(1);
 }
 
 
@@ -393,6 +399,8 @@ void semCreate(USLOSS_Sysargs * args) {
     // --- Output
     args->arg4 = ((void *) (long) 0);
     args->arg1 = ((void *) (long) semIndex);
+    
+    if (isZapped()) terminateReal(WASZAPPED);
     
     setUserMode();
 }
@@ -487,6 +495,9 @@ void semV(USLOSS_Sysargs * args) {
     
     // --- Output
     args->arg4 = 0;
+    
+    if (isZapped()) terminateReal(WASZAPPED);
+    
     setUserMode();
 }
 
@@ -512,6 +523,9 @@ void setUserMode() {
  ----------------------------------------------------------------------- */
 void getpid1(USLOSS_Sysargs * args){
 	args->arg1 = (void *)(long)getpid();
+	
+	if (isZapped()) terminateReal(WASZAPPED);
+
 	setUserMode();
 }
 
@@ -551,6 +565,8 @@ void semFree(USLOSS_Sysargs * args){
 		args->arg4 = ((void *) (long) 0);
 	}
    
+   	if (isZapped()) terminateReal(WASZAPPED);
+   
    	setUserMode();
 }
 
@@ -560,11 +576,17 @@ void getTimeOfDay(USLOSS_Sysargs * args){
     	USLOSS_Console("USLOSS_DeviceInput() != USLOSS_DEV_OK \n");
 	}
 	args->arg1 = (void *)(long)currentTime;
+	
+	if (isZapped()) terminateReal(WASZAPPED);
+	
 	setUserMode();
 }
 
 void cputime(USLOSS_Sysargs *args){
 	args->arg1 = (void *)(long)readtime();
+	
+	if (isZapped()) terminateReal(WASZAPPED);
+	
 	setUserMode();
 }
 
