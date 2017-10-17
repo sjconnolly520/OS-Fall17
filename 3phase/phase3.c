@@ -47,22 +47,28 @@ void zapkids(p3ProcPtr);
 p3Proc p3ProcTable[MAXPROC];
 semStruct semStructTable[MAXSEMS];
 
+/* ----------- Functions ------------- */
+
+/* ------------------------------------------------------------------------
+ Name - start2
+ Purpose     - Initialized all of the required global variables for a function run.
+             - Spawns a process called 'start3'
+ Parameters  - char * arg : may be usless, I'm not certain
+ Returns     - 0 - This indicates something went wrong.
+             - nothing - quit has been called successfully
+ Side Effects - ProcTable is initialized, SemTable is initialized, sysCallVec is initialized
+ ----------------------------------------------------------------------- */
 int start2(char *arg) {
     int pid;
 	int status;
-    /*
-     * Check kernel mode here.
-     */
-     
+    
+    // Check kernel mode here.
     if (!(USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)) {
         USLOSS_Console("start2(): called while in user mode. ");
         USLOSS_Console("Halting...\n");
         USLOSS_Halt(1);
     }
     
-    /*
-     * Data structure initialization as needed...
-     */
     // Initialize Process Table Entries
     for(int i = 0; i < MAXPROC; i++){
     	p3ProcTable[i].status 			= EMPTY;
@@ -126,6 +132,8 @@ int start2(char *arg) {
      * values back into the sysargs pointer, switch to user-mode, and
      * return to the user code that called Spawn.
      */
+    
+    // Fork the start3 process
     pid = spawnReal("start3", start3, NULL, USLOSS_MIN_STACK, 3);
 
     
@@ -140,7 +148,7 @@ int start2(char *arg) {
      */
     pid = waitReal(&status);
     
-    // failed to join with start3 child process
+    // If failed to join with start3 child process
     if (pid < 0) {
         quit(pid);
     }
@@ -151,12 +159,12 @@ int start2(char *arg) {
 
 /* ------------------------------------------------------------------------
  Name - spawn
- Purpose     - kernel mode version of spawn.
- Parameters  - USLOSS_Systemarg
+ Purpose     - kernel mode version of Spawn. Performs the error checking
+               for spawnReal.
+ Parameters  - USLOSS_Systemarg - parameters from the user.
  Returns     - nothing
- Side Effects - none
+ Side Effects - Sets PSR to User Mode
  ----------------------------------------------------------------------- */
-
 void spawn(USLOSS_Sysargs *sysargs){
     
     // Chack for any invalid args
@@ -175,20 +183,23 @@ void spawn(USLOSS_Sysargs *sysargs){
         return;
     }
     
-
+    // Call the actual initialization function for the new process
     long pid = spawnReal((char *) sysargs->arg5, sysargs->arg1, sysargs->arg2, (long) sysargs->arg3, (long) sysargs->arg4);
     
+    // Set proper output and set back to user mode
     sysargs->arg1 = (void *) pid;
     sysargs->arg4 = (void *) 0;
     setUserMode();
-}
+} /* spawn */
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - spawnReal
- Purpose     - kernel mode version of spawn.
- Parameters  - USLOSS_Systemarg
- Returns     - nothing
- Side Effects - none
+ Purpose     - Phase3 version of fork; makes a call to fork1.
+             - Initializes the process table entry for a new child process.
+ Parameters  - char * name : the name of the new child process
+             - int (*startFunc)(char *) : a pointer to the new child process' startFunction
+ Returns     - int : the pid of the newly created child process
+ Side Effects - a new process in the process table is initialized.
  ----------------------------------------------------------------------- */
 int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, int priority){
     
@@ -203,7 +214,7 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     }
     
     // Initialize entry in procTable
-    // If Parent has higher priority than new child, initilize procTable Entry
+    // If Parent has higher priority than new child, initialize process mailbox
     if (p3ProcTable[kidPID % MAXPROC].status == EMPTY ){
         mboxID = MboxCreate(0, 0);
         p3ProcTable[kidPID % MAXPROC].mboxID = mboxID;
@@ -214,7 +225,7 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     strcpy(p3ProcTable[kidPID % MAXPROC].name, name);
     p3ProcTable[kidPID % MAXPROC].startFunc = startFunc;
     
-    //set pid
+    // Set pid
     p3ProcTable[kidPID % MAXPROC].pid = kidPID;
     
     // Copy args to procTable entry
@@ -224,15 +235,13 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
         strcpy(p3ProcTable[kidPID % MAXPROC].args, arg);
     }
     
-    // Add child to child list FIXME: I may need to add new child to back of list
-    //p3ProcTable[kidPID % MAXPROC].nextSibling = p3ProcTable[getpid() % MAXPROC].children;
-    //p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
-    
+    // Add child to end of child list
     p3ProcPtr walk = p3ProcTable[getpid() % MAXPROC].children;
+    // If process child is the parent's first child
     if (walk == NULL){
     	p3ProcTable[getpid() % MAXPROC].children = &p3ProcTable[kidPID % MAXPROC];
-    }else{
-    	while(walk->nextSibling != NULL){ //1 2 3 
+    }else{ // Otherwise, insert at the end
+    	while(walk->nextSibling != NULL){
     		walk = walk->nextSibling;
     	}
     	walk->nextSibling = &p3ProcTable[kidPID % MAXPROC];
@@ -241,19 +250,23 @@ int spawnReal(char *name, int (*startFunc)(char *), char *arg, int stacksize, in
     // Cond Send to mailbox
     MboxCondSend(p3ProcTable[kidPID % MAXPROC].mboxID, NULL, 0);
     
+    // Return the child's PID
     return kidPID;
-}
+} /* spawnReal */
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - spawnLaunch
- Purpose     - kernel mode version of spawn.
- Parameters  - USLOSS_Systemarg
- Returns     - nothing
+ Purpose     - Phase3 version of launch. Calls the process' startFunc
+ Parameters  - char * args : May be unnecessary. I'm not certain
+ Returns     - int 404 : This indicates something went wrong.
+             - nothing : the process returned from its program run, terminated
  Side Effects - none
  ----------------------------------------------------------------------- */
 int spawnLaunch(char * args) {
-    // If child has higher priority than its parent, Create index in proc table, Create MailBox
+    
     int myPID = getpid();
+    
+    // If child has higher priority than its parent, Initialize MailBox
     if (p3ProcTable[myPID % MAXPROC].status == EMPTY) {
         int mboxID = MboxCreate(0, 0);
         p3ProcTable[myPID % MAXPROC].mboxID = mboxID;
@@ -261,59 +274,77 @@ int spawnLaunch(char * args) {
         MboxReceive(mboxID, NULL, 0);
     }
     
-    if (isZapped() ||p3ProcTable[myPID % MAXPROC].status == EMPTY )
+    // If the process was killed while blocked, terminate it.
+    if (isZapped() ||p3ProcTable[myPID % MAXPROC].status == EMPTY ){
     	terminateReal(WASZAPPED);
+    }
+    
+    // Return to UserMode before calling the process' function
     setUserMode();
+    
     // Call the process' startFunc with the given args
     int result = p3ProcTable[myPID % MAXPROC].startFunc(p3ProcTable[myPID % MAXPROC].args);
     
+    // After the process has finished it run, terminate it with the returned value;
     Terminate(result);
+    
+    // Should never reach here.
     return -404;
-}
-/* ------------------------------------------------------------------------ FIXME: Block comment
+} /* spawnLaunch */
+
+/* ------------------------------------------------------------------------
  Name - wait1
- Purpose     - kernel mode version of spawn.
- Parameters  - USLOSS_Systemarg
+ Purpose     - Phase3 version of join; Waits for a child process to finish
+ Parameters  - USLOSS_Systemarg : arguments given by the user
  Returns     - nothing
- Side Effects - none
+ Side Effects - Sets PSR to User Mode
  ----------------------------------------------------------------------- */
 void wait1(USLOSS_Sysargs * args){
 
-    //check
+    // Check to make sure the arguments passed in are valid
     if ((long) args->number != SYS_WAIT) {
         args->arg2 = (void *) -1;
         return;
     }
     
-    //call waitReal
+    // Call waitReal
     int status;
     int kidPID = waitReal(&status);
     
-    //zapped while blocked on a join()
+    // If the process was zapped while blocked on a join(), terminate
     if (kidPID == -1) {
         terminateReal(WASZAPPED);
     }
     
+    // Reset process table entry
     p3ProcTable[getpid() % MAXPROC].status = ACTIVE;
     
-    //setup args for return
+    // Set proper output and set back to user mode
+    // If the process joined with code -2 (no children to join)
     if (kidPID == -2) {
         args->arg1 = (void *) 0;
         args->arg2 = (void *) -2;
     }
+    // Otherwise, the wait1 was successful
     else {
         args->arg1 = ((void *) (long) kidPID);
         args->arg2 = ((void *) (long) status);
     }
-    if (isZapped()) terminateReal(WASZAPPED);
+    
+    // If the process was zapped while waiting, terminate it
+    if (isZapped()){
+        terminateReal(WASZAPPED);
+    }
+    
+    // Return to UserMode before returning
     setUserMode();
-}
+} /* wait1 */
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - waitReal
- Purpose     - kernel mode version of spawn.
- Parameters  - USLOSS_Systemarg
- Returns     - nothing
+ Purpose     - Blocks a user lever process until its child has finished
+ Parameters  - int * status : a pointer to the child's return status
+ Returns     - int : the pid of the child that finished first
  Side Effects - none
  ----------------------------------------------------------------------- */
 int waitReal(int * status) {
@@ -321,32 +352,39 @@ int waitReal(int * status) {
     return join(status);
 }
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - terminate
- Purpose     - kernel mode version of spawn.
+ Purpose     - A store front function for terminateReal. Checks parameters.
  Parameters  - USLOSS_Systemarg
  Returns     - nothing
  Side Effects - none
  ----------------------------------------------------------------------- */
 void terminate(USLOSS_Sysargs * args) {
-    //check
+    // Check to make sure the arguments passed in are valid
     if ((long) args->number != SYS_TERMINATE) {
         args->arg2 = (void *) -1;
         return;
     }
     	
-    //call tReal
+    // Make call to terminate real
     terminateReal((int)(long)args->arg1);
     
 }
 
+/* ------------------------------------------------------------------------
+ Name - terminateReal
+ Purpose     - Zaps a process' children, waits for them to terminate.
+             - Quits the calling process once children have zapped.
+ Parameters  - int status : quit status of the calling process
+ Returns     - nothing
+ Side Effects - Sets process table entries for children and current to EMPTY
+ ----------------------------------------------------------------------- */
 void terminateReal(int status){
 	
+    // Grab the currently running process' slot in the process table
 	int myPID = getpid();
 	p3ProcPtr current = &p3ProcTable[myPID % MAXPROC];
-	
-	
-    
+
 	// Zap all of the calling process' active children
 	zapkids(current->children);
 	// while(current->children != NULL){
@@ -358,26 +396,41 @@ void terminateReal(int status){
 // 		current->children = current->children->nextSibling;
 // 	}
 
+    // Destroy the entry in the process table for the currently running process and quit
     current->status = EMPTY;
 	quit(status);
-}
+} /* terminateReal */
+
+/* I think this function is just a place holder. */
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - nullsys3
+ Purpose     - Place Holder. Does nothing. I think.
+ Parameters  -
+ Returns     -
+ Side Effects -
+ ----------------------------------------------------------------------- */
 void nullsys3(USLOSS_Sysargs *sysargs) {
     //checking?
     terminateReal(1);
-}
+} /* nullsys3 */
 
-
+/* ------------------------------------------------------------------------
+ Name - semCreate
+ Purpose     - Creates a semaphore. Initializes the first available entry in the semTable
+ Parameters  - USLOSS_Systemarg : User parameters for the new semaphore
+ Returns     - nothing
+ Side Effects - Changes values for an entry in the semTable
+              - Sets PSR to User Mode
+ ----------------------------------------------------------------------- */
 void semCreate(USLOSS_Sysargs * args) {
-    // Error checking. Out of range, all sems used.
+    
     // If semaphore flags is negative, fail to create semaphore
     if ((long) args->arg1 < 0) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
-//    USLOSS_Console("HELLO");
-    
-    // Initialize semaphore values: value, blocked list, status (mailbox?)
+    // Initialize semaphore values: value, blocked list, status, mailbox
     int semIndex;
     for(semIndex = 0; semIndex < MAXSEMS; semIndex++) {
         if (semStructTable[semIndex].status == EMPTY) {
@@ -388,216 +441,343 @@ void semCreate(USLOSS_Sysargs * args) {
         }
     }
     
-    // No more available slots in semTable
+    // If no more available slots in semTable, return
     if (semIndex >= MAXSEMS) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
-//    USLOSS_Console("Index in SemTable is %d, PID is %d\n", semIndex, getpid());
-    
-    // --- Output
+    // Set output (if semCreate succeeded)
     args->arg4 = ((void *) (long) 0);
     args->arg1 = ((void *) (long) semIndex);
     
-    if (isZapped()) terminateReal(WASZAPPED);
+    // If calling process was zapped
+    if (isZapped()) {
+        terminateReal(WASZAPPED);
+    }
     
+    // Return to User Mode
     setUserMode();
-}
+} /* semCreate */
 
+/* Probably don't need this. A relic of a more elegant age. */
+/* ------------------------------------------------------------------------ FIXME: Block comment
+ Name - semCreateReal
+ Purpose     - kernel mode version of spawn.
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void semCreateReal() {
     
-}
+}  /* semCreateReal */
 
+/* ------------------------------------------------------------------------
+ Name - semP
+ Purpose     - Perform a 'P' operation on a semaphore.
+             - Decreases the number of flags in semaphore.
+             - Blocks a process if the number of flags is < 0.
+ Parameters  - USLOSS_Systemarg : Contains the identifier of the semaphore
+ Returns     - nothing
+ Side Effects - Potentially blocks the calling process on the semaphore
+              - Sets PSR to User Mode
+ ----------------------------------------------------------------------- */
 void semP(USLOSS_Sysargs * args) {
-    // --- Error checking. Out of range, sem not active.
+    // Error checking. If index out of range, return.
     int semIndex = (int)(long)args->arg1;
     if (semIndex < -1 || semIndex > MAXSEMS) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
+    // Error checking. If not a valid semaphore, return.
     if (semStructTable[semIndex].status != ACTIVE) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
-    // --- Enter critical section of code. Mutex send.
+    // Enter critical section of code. Gain Mutex.
     int mutex_mboxID = semStructTable[semIndex].mboxID;
-    
     MboxSend(mutex_mboxID, NULL, 0);
     
+    // Decrement number of flags
     semStructTable[semIndex].flags--;
     
+    // If number of flags < 0, block the calling process on its private mailbox
     if(semStructTable[semIndex].flags < 0){
-    	addToSemphoreBlockedList(getpid(), semIndex); 
+        
+        // Add process to semaphore block list
+    	addToSemphoreBlockedList(getpid(), semIndex);
+        
+        // Release Mutex. Call Send() to block on private mailbox.
     	MboxReceive(mutex_mboxID, NULL, 0);
     	MboxSend(p3ProcTable[getpid() % MAXPROC].mboxID, NULL, 0);
-    }else{
+    }
+    else{       // If we are allowed to enter critical section, do not block
+        // Release Mutex, allow process to continue program run.
     	MboxReceive(mutex_mboxID, NULL, 0);
     }
     
-    
-    // --- Output
+    // Set output
     args->arg4 = 0;
+    
+    // If process was zapped while blocked on the semaphore, terminate
     if (isZapped() || semStructTable[semIndex].status == EMPTY){
     	terminateReal(WASZAPPED);
     }
+    
+    // Return to User Mode
     setUserMode();
-}
+}  /* semP */
 
+/* ------------------------------------------------------------------------
+ Name - addToSemphoreBlockedList
+ Purpose     - Adds a given process to the blocked list of a given semaphore
+ Parameters  - int pid : the pid of the process to add to the block list
+             - int semIndex : the index in the semTable of the semaphore
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void addToSemphoreBlockedList(int pid, int semIndex){
-	p3ProcPtr inInsert  = &p3ProcTable[pid % MAXPROC];
+    
+    // Create a pointer to the process to be added to the block list
+	p3ProcPtr toInsert  = &p3ProcTable[pid % MAXPROC];
+    
 	p3ProcPtr walk = semStructTable[semIndex].blockList;
-	if (walk == NULL) semStructTable[semIndex].blockList = inInsert;
+    
+    // If there are no other processes blocked on the semaphore, PID becomes the first
+    if (walk == NULL) {
+        semStructTable[semIndex].blockList = toInsert;
+    }
+    // If there are processes already blocked on the semaphore, add the new one to the end of the list
 	else{
 		while(walk->nextSemBlocked != NULL){
 			walk = walk->nextSemBlocked; 
 		}	
-		walk->nextSemBlocked = inInsert;
+		walk->nextSemBlocked = toInsert;
 	}
-}
+} /* addToSemaphoreBlockedList */
+
+/* ------------------------------------------------------------------------
+ Name - semV
+ Purpose     - Perform a 'V' operation on a given semaphore.
+             - Increases the number of flags on semaphore.
+             - Unblocks the first process blocked on the semaphore (if one exists)
+ Parameters  - USLOSS_Systemarg : Contains the identifier of the semaphore
+ Returns     - nothing
+ Side Effects - Potentially unblocks a process that was blocked on the semaphore
+              - Sets PSR to User Mode
+ ----------------------------------------------------------------------- */
 void semV(USLOSS_Sysargs * args) {
-    // --- Error checking. Out of range, sem not active.
+    
+    // Error checking. If index out of range, return.
     int semIndex = (int)(long)args->arg1;
     if (semIndex < -1 || semIndex > MAXSEMS) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
+    // Error checking. If not a valid semaphore, return.
     if (semStructTable[semIndex].status != ACTIVE) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
-    // --- Enter critical section of code. Mutex send.
+    // Enter critical section of code. Gain mutex.
     int mutex_mboxID = semStructTable[semIndex].mboxID;
-    
     MboxSend(mutex_mboxID, NULL, 0);
-    // --- Value += 1
+    
+    // If there are processes blocked on the semaphore
     if(semStructTable[semIndex].flags < 0){
+        // Increase the number of flags on the semaphore.
     	semStructTable[semIndex].flags++;
+        
+        // Remove the first blocked process from blocked list
     	int blockedPID = semStructTable[semIndex].blockList->pid;
     	semStructTable[semIndex].blockList = semStructTable[semIndex].blockList->nextSemBlocked;
+        
+        // Unblock the process. Receive on the blocked process' private mailbox
     	MboxReceive(p3ProcTable[blockedPID % MAXPROC].mboxID, NULL, 0);
+        
+        // Release mutex.
     	MboxReceive(mutex_mboxID, NULL, 0);
-    }else{
+    }
+    else{               // If there are no blocked processes
+        // Increase the number of flags. Release mutex.
     	semStructTable[semIndex].flags++;
     	MboxReceive(mutex_mboxID, NULL, 0);
     }
-    // --- Enter critical section of code. Mutex send.
     
-    // --- If process blocked on semaphore, unblock first
-        // --- Remove first from block list
-        // --- Mutex release
-        // --- Send to blockedProc's private mailbox
-    // --- Else, release mutex
-    
-    // --- Output
+    // Set output for User
     args->arg4 = 0;
     
-    if (isZapped()) terminateReal(WASZAPPED);
+    // If process has been zapped, terminate.
+    if (isZapped()) {
+        terminateReal(WASZAPPED);
+    }
     
+    // Return to User Mode.
     setUserMode();
-}
+} /* semV */
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - setUserMode
- Purpose     - kernel mode version of setUserMode.
- Parameters  - USLOSS_Systemarg
+ Purpose     - Sets the PSR to UserMode, (Sets first bit to 0)
+ Parameters  - none
  Returns     - nothing
- Side Effects - none
+ Side Effects - Sets PSR Mode Bit to 0
  ----------------------------------------------------------------------- */
 void setUserMode() {
     if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
         USLOSS_Console("ERROR: setUserMode(): Failed to change to User Mode.\n");
     }
-}
+}  /* setUserMode */
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - getpid1
- Purpose     - kernel mode version of getpid.
+ Purpose     - Phase3 implementation of getPID.
  Parameters  - USLOSS_Systemarg
- Returns     - nothing
- Side Effects - none
+ Returns     - nothing (Systemarg.arg1 contains the current process' PID)
+ Side Effects - Sets PSR to User Mode
  ----------------------------------------------------------------------- */
 void getpid1(USLOSS_Sysargs * args){
+    
+    // Set output
 	args->arg1 = (void *)(long)getpid();
 	
-	if (isZapped()) terminateReal(WASZAPPED);
+    // If process was zapped, terminate it.
+    if (isZapped()){
+        terminateReal(WASZAPPED);
+    }
 
+    // Return to User Mode
 	setUserMode();
-}
+}  /* getpid1 */
 
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - semFree
- Purpose     - kernel mode version of semFree.
- Parameters  - USLOSS_Systemarg
+ Purpose     - Destroys entry in semTable
+ Parameters  - USLOSS_Systemarg : Contains the identifier of the semaphore
  Returns     - nothing
- Side Effects - none
+ Side Effects - Sets given entry in the semaphore table to EMPTY
+              - Sets PSR to User Mode
  ----------------------------------------------------------------------- */
 void semFree(USLOSS_Sysargs * args){
+    
+    // Error checking. If index out of range, return.
 	int semIndex = (int)(long)args->arg1;
     if (semIndex < -1 || semIndex > MAXSEMS) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
     
+    // Error checking. If not a valid semaphore, return.
     if (semStructTable[semIndex].status == EMPTY ) {
         args->arg4 = ((void *) (long) -1);
         return;
     }
-    
-    // --- Enter critical section of code. Mutex send.
-    //int mutex_mboxID = semStructTable[semIndex].mboxID;
-    
+
+    // Set semTable entry status to EMPTY
     semStructTable[semIndex].status = EMPTY;
     
+    // If there were processes blocked on the semaphore, unblock them
     if (semStructTable[semIndex].flags < 0){
+        
+        // Unblock all blocked processes
     	p3ProcPtr walk = semStructTable[semIndex].blockList;
 		while(walk != NULL){
 			p3ProcPtr temp = walk->nextSemBlocked;
 			MboxReceive(walk->mboxID, NULL, 0);
 			walk = temp; 
-		}	
+		}
+        
+        // If there were processes blocked on the semaphore, return 1
 		args->arg4 = ((void *) (long) 1);
-	}else {
+	}
+    else {
+        // If there were no processes blocked on the semaphore, return 0
 		args->arg4 = ((void *) (long) 0);
 	}
    
-   	if (isZapped()) terminateReal(WASZAPPED);
+    // If process was zapped, terminate it.
+    if (isZapped()){
+        terminateReal(WASZAPPED);
+    }
    
+    // Return to User Mode
    	setUserMode();
-}
+}  /* semFree */
 
+/* ------------------------------------------------------------------------
+ Name - getTimeOfDay
+ Purpose     - Phase3 version of currentTime.
+             - Returns amount of time USLOSS has been running
+ Parameters  - USLOSS_Systemarg : Used only for returning
+ Returns     - nothing
+ Side Effects - Sets PSR to User Mode
+ ----------------------------------------------------------------------- */
 void getTimeOfDay(USLOSS_Sysargs * args){
+    
+    // Get the time that USLOSS has been running.
 	int currentTime;
 	if (USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime) != USLOSS_DEV_OK){
     	USLOSS_Console("USLOSS_DeviceInput() != USLOSS_DEV_OK \n");
 	}
+    
+    // Set the return value to be the USLOSS runtime.
 	args->arg1 = (void *)(long)currentTime;
 	
-	if (isZapped()) terminateReal(WASZAPPED);
+    // If the process was zapped, terminate it.
+    if (isZapped()) {
+        terminateReal(WASZAPPED);
+    }
 	
+    // Return to User Mode
 	setUserMode();
-}
+}  /* getTimeOfDay */
 
-void cputime(USLOSS_Sysargs *args){
+/* ------------------------------------------------------------------------
+ Name - cputime
+ Purpose     - Phase3 version of readtime.
+             - Returns the amount of time the current process has had on the CPU
+ Parameters  - USLOSS_Systemarg : Used for returning only
+ Returns     - nothing
+ Side Effects - Sets PSR to User Mode
+ ----------------------------------------------------------------------- */
+void cputime(USLOSS_Sysargs * args){
+    
+    // Set the return value to be the CPU time used
 	args->arg1 = (void *)(long)readtime();
 	
-	if (isZapped()) terminateReal(WASZAPPED);
+    // If the process was zapped, terminate it.
+    if (isZapped()) {
+        terminateReal(WASZAPPED);
+    }
 	
+    // Return to User Mode
 	setUserMode();
-}
+}  /* cputime */
 
-void zapkids(p3ProcPtr children){
+// FIXME: Block Comment && Inline comments
+/* ------------------------------------------------------------------------
+ Name - zapkids
+ Purpose     - Recursively zaps all children
+ Parameters  - USLOSS_Systemarg
+ Returns     - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
+void zapkids(p3ProcPtr children) {
 	if (children == NULL) return;
 	
 	p3ProcPtr walk = children;
 	while( walk != NULL){
 		zapkids(walk->children);
-		if (walk->status == ACTIVE) zap(walk->pid);
+        if (walk->status == ACTIVE) {
+            zap(walk->pid);
+        }
+        p3ProcPtr temp = walk;
 		walk = walk->nextSibling;
+        temp->nextSibling = NULL;
 	}
 	
-}
+} /* zapkids */
