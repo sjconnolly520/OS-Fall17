@@ -249,7 +249,6 @@ int spawnLaunch(char * args) {
     // If child has higher priority than its parent, Create index in proc table, Create MailBox
     int myPID = getpid();
     if (p3ProcTable[myPID % MAXPROC].status == EMPTY) {
-        USLOSS_Console("INSIDE IF STATEMENT: PID == %d\n", getpid());
         int mboxID = MboxCreate(0, 0);
         p3ProcTable[myPID % MAXPROC].mboxID = mboxID;
         p3ProcTable[myPID % MAXPROC].status = ACTIVE;
