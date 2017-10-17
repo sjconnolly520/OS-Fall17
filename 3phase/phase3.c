@@ -363,7 +363,8 @@ void terminateReal(int status){
 	quit(status);
 }
 void nullsys3(USLOSS_Sysargs *sysargs) {
-    
+    //checking?
+    terminateReal(1);
 }
 
 
