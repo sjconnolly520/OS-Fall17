@@ -6,7 +6,7 @@ resultsdir="testResults/"
 myresultsdir="myResults/"
 fext=".txt"
 difftext="diff"
-maxtest=20
+maxtest=48
 diffdir="diffOutputs/"
 
 
