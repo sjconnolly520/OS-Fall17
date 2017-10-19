@@ -22,6 +22,7 @@ struct p3Proc{
     
     p3ProcPtr       children;
     p3ProcPtr       nextSibling;
+    p3ProcPtr		nextSemBlocked;
     
     char            name[MAXNAME];
     int             (*startFunc)(char *);
