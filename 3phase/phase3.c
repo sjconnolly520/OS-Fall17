@@ -387,30 +387,20 @@ void terminateReal(int status){
 
 	// Zap all of the calling process' active children
 	zapkids(current->children);
-	// while(current->children != NULL){
-// 		if (current->children->status == ACTIVE){
-// 			current->children->status = EMPTY;
-// 			
-// 			zap(current->children->pid);
-// 		}
-// 		current->children = current->children->nextSibling;
-// 	}
 
     // Destroy the entry in the process table for the currently running process and quit
     current->status = EMPTY;
 	quit(status);
 } /* terminateReal */
 
-/* I think this function is just a place holder. */
-/* ------------------------------------------------------------------------ FIXME: Block comment
+/* ------------------------------------------------------------------------
  Name - nullsys3
- Purpose     - Place Holder. Does nothing. I think.
+ Purpose     - Place Holder. If we reach this point, Simply terminate.
  Parameters  -
  Returns     -
  Side Effects -
  ----------------------------------------------------------------------- */
 void nullsys3(USLOSS_Sysargs *sysargs) {
-    //checking?
     terminateReal(1);
 } /* nullsys3 */
 
@@ -459,18 +449,6 @@ void semCreate(USLOSS_Sysargs * args) {
     // Return to User Mode
     setUserMode();
 } /* semCreate */
-
-/* Probably don't need this. A relic of a more elegant age. */
-/* ------------------------------------------------------------------------ FIXME: Block comment
- Name - semCreateReal
- Purpose     - kernel mode version of spawn.
- Parameters  - USLOSS_Systemarg
- Returns     - nothing
- Side Effects - none
- ----------------------------------------------------------------------- */
-void semCreateReal() {
-    
-}  /* semCreateReal */
 
 /* ------------------------------------------------------------------------
  Name - semP
@@ -758,25 +736,34 @@ void cputime(USLOSS_Sysargs * args){
 	setUserMode();
 }  /* cputime */
 
-// FIXME: Block Comment && Inline comments
 /* ------------------------------------------------------------------------
  Name - zapkids
- Purpose     - Recursively zaps all children
- Parameters  - USLOSS_Systemarg
+ Purpose     - Recursive bottom-up zap of all decendents of current process
+ Parameters  - pointer to first child process to zap
  Returns     - nothing
- Side Effects - none
+ Side Effects - Zaps all descendents, set entries in table back to null
  ----------------------------------------------------------------------- */
 void zapkids(p3ProcPtr children) {
+    // Base case. If current child is null, return
 	if (children == NULL) return;
 	
 	p3ProcPtr walk = children;
+    
+    // While the current process has children, zap them
 	while( walk != NULL){
+        // Recursive call
 		zapkids(walk->children);
+        
+        // If this is an active process, zap it
         if (walk->status == ACTIVE) {
             zap(walk->pid);
         }
+        
+        // Move on to next child (walk.sibling)
         p3ProcPtr temp = walk;
 		walk = walk->nextSibling;
+        
+        // Set sibling pointer to null.
         temp->nextSibling = NULL;
 	}
 	
