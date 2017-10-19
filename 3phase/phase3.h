@@ -10,6 +10,6 @@
 #define EMPTY           -1
 #define ACTIVE           1
 #define WAIT_BLOCK       11
-
+#define WASZAPPED        1
 #endif /* _PHASE3_H */
 
