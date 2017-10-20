@@ -1,8 +1,8 @@
-#include <usloss.h>
-#include <phase1.h>
-#include <phase2.h>
-#include <phase3.h>
-#include <phase4.h>
+#include "usloss.h"
+#include "phase1.h"
+#include "phase2.h"
+#include "phase3.h"
+#include "phase4.h"
 #include <stdlib.h> /* needed for atoi() */
 
 semaphore 	running;
@@ -14,7 +14,7 @@ void
 start3(void)
 {
     char	name[128];
-    char        termbuf[10];
+    char    termbuf[10];
     int		i;
     int		clockPID;
     int		pid;

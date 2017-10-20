@@ -46,6 +46,6 @@ typedef struct USLOSS_Sysargs
 } USLOSS_Sysargs;
 
 // 
-extern void (*systemCallVec[])(systemArgs *args);
+extern void (*systemCallVec[])(USLOSS_Sysargs *args);
 
 #endif
