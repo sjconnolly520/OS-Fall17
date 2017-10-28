@@ -2,7 +2,7 @@
 
 #define DRIVER_H
 
-#define NONACTIVE 	0
+#define NONACTIVE 	-1
 #define ACTIVE 		1
 #define SLEEP		2
 #define DISK		3

@@ -171,10 +171,10 @@ static int TermDriver(char *arg){
 	return 0;
 }
 
-//USER AND KERNEL level functions
+/*----------- USER AND KERNEL level functions ---------------- */
 
 void sleep(USLOSS_Sysargs *args){
-
+	
 }
 
 // Causes the calling process to become unrunnable for at least the specified number of seconds, 
@@ -183,6 +183,46 @@ void sleep(USLOSS_Sysargs *args){
 //		   -1: seconds is not valid
 //			0: otherwise
 int sleepReal(int seconds){
+	if (seconds < 0) return -1;
+	
+	int status;
+	if (USLOSS_DeviceInput(USLOSS_CLOCK_INT, 0, &status) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: sleepReal(): Encountered error fetching current time. Halting.\n");
+        USLOSS_Halt(1);
+    }
+	
+	int pid = getpid();
+	p4ProcTable[pid % MAXPROC].status 	= SLEEP;
+	p4ProcTable[pid % MAXPROC].pid 		= pid;
+	p4ProcTable[pid % MAXPROC].wakeTime = seconds * 1000000 + status;
+	
+	p4ProcPtr toAdd = &p4ProcTable[pid % MAXPROC];
+	
+	p4ProcPtr curr;
+	p4ProcPtr prev;
+	
+	for(prev = NULL, curr = SleepList;
+		curr != NULL && toAdd->wakeTime > curr->wakeTime;
+		prev = curr; curr = curr->nextSleeping){;}
+	
+	if(curr == NULL && prev == NULL){
+		SleepList = toAdd;
+	}
+	else if (prev == NULL){
+		toAdd->nextSleeping = curr;
+		SleepList = toAdd;
+	}
+	else{
+		prev->nextSleeping = toAdd;
+		toAdd->nextSleeping = curr;
+	}
+	
+	sempReal(p4ProcTable[pid % MAXPROC].semID);
+	
+	p4ProcTable[pid % MAXPROC].status 	= INACTIVE;
+	p4ProcTable[pid % MAXPROC].pid 		= INACTIVE;
+	p4ProcTable[pid % MAXPROC].wakeTime = INACTIVE;
+	
 	return 0;
 }
 
