@@ -150,12 +150,17 @@ DiskDriver(char *arg)
     return 0;
 }
 
-//User AND Kernel level functions
 
 static int TermDriver(char *arg){
 	return 0;
 }
 
+
+//USER AND KERNEL level functions
+
+// Sleep (syscall SYS_SLEEP)
+//  Input: arg1: number of seconds to delay the process
+// Output: arg4: -1 if illegal values are given as input; 0 otherwise.
 int Sleep(int seconds){
 	return 0;
 }
@@ -169,9 +174,19 @@ int sleepReal(int seconds){
 	return 0;
 }
 
+// DiskRead (syscall SYS_DISKREAD)
+// Input
+// 		arg1: the memory address to which to transfer arg2: number of sectors to read
+// 		arg3: the starting disk track number
+// 		arg4: the starting disk sector number
+// 		arg5: the unit number of the disk from which to read
+//
+// Output
+// 		arg1: 0 if transfer was successful; the disk status register otherwise. 
+// 		arg4: -1 if illegal values are given as input; 0 otherwise.
 int DiskRead(void *diskBuffer, int unit, int track, int first, 
                        int sectors, int *status){
-                       
+	return 0;                      
 }
 
 // Reads sectors sectors from the disk indicated by unit, starting at track track and sector first. 
