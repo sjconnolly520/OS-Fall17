@@ -1,5 +1,4 @@
 #ifndef DRIVER_H
-
 #define DRIVER_H
 
 #define NONACTIVE 	-1
@@ -9,7 +8,7 @@
 #define TERM		4
 
 typedef struct p4Proc p4Proc;
-typedef struct p3Proc *p4ProcPtr;
+typedef struct p4Proc *p4ProcPtr;
 
 struct p4Proc{
     int             status;

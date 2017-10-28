@@ -1,3 +1,11 @@
+#include <usyscall.h>
+#include <usloss.h>
+#include <phase1.h>
+#include <phase2.h>
+#include <phase3.h>
+#include <libuser.h>
+
+
 // Sleep (syscall SYS_SLEEP)
 //  Input: arg1: number of seconds to delay the process
 // Output: arg4: -1 if illegal values are given as input; 0 otherwise.

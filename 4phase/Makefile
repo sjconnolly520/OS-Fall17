@@ -5,7 +5,7 @@ ASSIGNMENT = 452phase4
 CC = gcc
 AR = ar
 
-COBJS = phase4.o libuser.o
+COBJS = phase4.o libuser4.o
 CSRCS = ${COBJS:.o=.c}
 
 PHASE1LIB = patrickphase1
@@ -36,23 +36,23 @@ test18
 
 LIBS = -lusloss -l$(PHASE1LIB) -l$(PHASE2LIB) -l$(PHASE3LIB) -lphase4
 
-all: test00 test01
+all: test00 test01 \
 test02 test03 test04 test05 test06 test07 test08 \
 test09 test10 test11 test12 test13 test14 test15 test16 test17 \
 test18
 
-$(TARGET):    $(COBJS)
-    $(AR) -r $@ $(COBJS)
+$(TARGET):	$(COBJS)
+			$(AR) -r $@ $(COBJS)
 
-$(TESTS):    $(TARGET)
-    $(CC) $(CFLAGS) -c $(TESTDIR)/$@.c
-    $(CC) $(LDFLAGS) -o $@ $@.o $(LIBS)
+$(TESTS):	$(TARGET)
+			$(CC) $(CFLAGS) -c $(TESTDIR)/$@.c
+			$(CC) $(LDFLAGS) -o $@ $@.o $(LIBS)
 
 clean:
-    rm -f $(COBJS) $(TARGET) test*.txt test??.o test?? core term*.out
+	rm -f $(COBJS) $(TARGET) test*.txt test??.o test?? core term*.out
 
 phase4.o:    driver.h
 
 submit: $(CSRCS) $(HDRS) Makefile
-    tar cvzf phase4.tgz $(CSRCS) $(HDRS) Makefile
+	tar cvzf phase4.tgz $(CSRCS) $(HDRS) Makefile
 
