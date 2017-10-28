@@ -95,10 +95,10 @@ ClockDriver(char *arg)
 
     // Infinite loop until we are zap'd
     while(! is_zapped()) {
-	result = waitdevice(USLOSS_CLOCK_DEV, 0, &status);
-	if (result != 0) {
-	    return 0;
-	}
+        result = waitdevice(USLOSS_CLOCK_DEV, 0, &status);
+        if (result != 0) {
+            return 0;
+        }
 	/*
 	 * Compute the current time and wake up any processes
 	 * whose time has come.
