@@ -6,6 +6,7 @@ CC = gcc
 AR = ar
 
 COBJS = phase4.o libuser4.o p1.o
+
 CSRCS = ${COBJS:.o=.c}
 
 PHASE1LIB = patrickphase1
@@ -47,8 +48,9 @@ $(TESTS):	$(TARGET)
 clean:
 	rm -f $(COBJS) $(TARGET) test*.txt test??.o test?? core term*.out
 
+
 phase4.o:    driver.h
 
 submit: $(CSRCS) $(HDRS) Makefile
-	tar cvzf phase4.tgz $(CSRCS) $(HDRS) Makefile
+    tar cvzf phase4.tgz $(CSRCS) $(HDRS) Makefile
 
