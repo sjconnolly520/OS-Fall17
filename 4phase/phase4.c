@@ -22,12 +22,13 @@ p4ProcPtr SleepList = NULL;
 
 /*-------------Drivers-------------- */
 static int	ClockDriver(char *);
-static int	DiskDriver(char *);
+//static int	DiskDriver(char *);
 //TODO is this right proto?
-static int	TermDriver(char *);
+//static int	TermDriver(char *);
 
 /*-------------Proto------------------*/
 void sleep1(USLOSS_Sysargs*);
+int sleepReal(int);
 void diskRead(USLOSS_Sysargs*);
 void diskWrite(USLOSS_Sysargs*);
 void diskSize(USLOSS_Sysargs*);
@@ -37,10 +38,10 @@ void termWrite(USLOSS_Sysargs*);
 void
 start3(void)
 {
-    char	name[128];
-    char    buf[10];
-    char    termbuf[10];
-    int		i;
+   //  char	name[128];
+//     char    buf[10];
+//     char    termbuf[10];
+//     int		i;
     int		clockPID;
     int		pid;
     int		status;
@@ -95,14 +96,14 @@ start3(void)
      * driver, and perhaps do something with the pid returned.
      */
 
-    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-        sprintf(buf, "%d", i);
-        pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
-        if (pid < 0) {
-            USLOSS_Console("start3(): Can't create term driver %d\n", i);
-            USLOSS_Halt(1);
-        }
-    }
+    // for (i = 0; i < USLOSS_DISK_UNITS; i++) {
+//         sprintf(buf, "%d", i);
+//         pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
+//         if (pid < 0) {
+//             USLOSS_Console("start3(): Can't create term driver %d\n", i);
+//             USLOSS_Halt(1);
+//         }
+//     }
 
     // May be other stuff to do here before going on to terminal drivers
 
@@ -139,8 +140,11 @@ ClockDriver(char *arg)
 
     // Let the parent know we are running and enable interrupts.
     semvReal(running);
-    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
-
+    if (USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR){
+    	USLOSS_Console("ERROR: ClockDriver(): Failed to change to User Mode.\n");
+    }
+	
+	
     // Infinite loop until we are zap'd
     while(! isZapped()) {
         result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
@@ -163,23 +167,30 @@ ClockDriver(char *arg)
 	 		semvReal(sleepSemID);
 	 	}
     }
-}
-
-static int
-DiskDriver(char *arg)
-{
+    
+    quit(1);
     return 0;
 }
 
+// static int
+// DiskDriver(char *arg)
+// {
+//     return 0;
+// }
 
-static int TermDriver(char *arg){
-	return 0;
-}
+
+// static int TermDriver(char *arg){
+// 	return 0;
+// }
 
 /*----------- USER AND KERNEL level functions ---------------- */
 
 void sleep1(USLOSS_Sysargs *args){
+	if (args->number != SYS_SLEEP){
+		terminateReal(1);
+	}
 	
+	args->arg4 = (void *)(long)sleepReal((int)(long)args->arg1);
 }
 
 // Causes the calling process to become unrunnable for at least the specified number of seconds, 

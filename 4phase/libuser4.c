@@ -5,12 +5,26 @@
 #include <phase3.h>
 #include <libuser.h>
 
+#define CHECKMODE {    \
+    if (USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) { \
+        USLOSS_Console("Trying to invoke syscall from kernel\n"); \
+        USLOSS_Halt(1);  \
+    }  \
+}
 
 // Sleep (syscall SYS_SLEEP)
 //  Input: arg1: number of seconds to delay the process
 // Output: arg4: -1 if illegal values are given as input; 0 otherwise.
 int Sleep(int seconds){
-	return 0;
+	CHECKMODE;
+	
+	USLOSS_Sysargs args;
+	args.number = SYS_SLEEP;
+	args.arg1 = (void *)(long)seconds;
+	
+	USLOSS_Syscall(&args);
+	
+	return (long)args.arg4;
 }
 
 // DiskRead (syscall SYS_DISKREAD)
