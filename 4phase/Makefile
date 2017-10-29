@@ -52,5 +52,4 @@ clean:
 phase4.o:    driver.h
 
 submit: $(CSRCS) $(HDRS) Makefile
-    tar cvzf phase4.tgz $(CSRCS) $(HDRS) Makefile
-
+        tar cvzf phase4.tgz $(CSRCS) $(HDRS) Makefile
