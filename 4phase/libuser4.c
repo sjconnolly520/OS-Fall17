@@ -47,8 +47,29 @@ int DiskWrite(void *diskBuffer, int unit, int track, int first,
 	return 0;
 }
 
-int DiskSize (int unit, int *sector, int *track, int *disk){
-	return 0;
+// DiskSize (syscall SYS_DISKSIZE)
+// Returns information about the size of the disk (diskSize). 
+// Input
+// 		arg1: the unit number of the disk
+// Output
+// 		arg1: size of a sector, in bytes
+//		arg2: number of sectors in a track
+//      arg3: number of tracks in the disk
+//      arg4: -1 if illegal values are given as input; 0 otherwise.
+int DiskSize (int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk){
+	CHECKMODE;
+	
+	
+	USLOSS_Sysargs args;
+	args.number = SYS_DISKSIZE;
+	args.arg1 = (void *)(long)unit;
+	USLOSS_Syscall(&args);
+
+	*sectorSize 	= (int)(long)args.arg1;
+	*sectorsInTrack = (int)(long)args.arg2;
+	*tracksInDisk 	= (int)(long)args.arg3; 
+	
+	return (int)(long)args.arg4;
 }
 
 int TermRead (char *buffer, int bufferSize, int unitID,

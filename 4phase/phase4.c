@@ -22,7 +22,7 @@ p4ProcPtr SleepList = NULL;
 
 /*-------------Drivers-------------- */
 static int	ClockDriver(char *);
-//static int	DiskDriver(char *);
+static int	DiskDriver(char *);
 //TODO is this right proto?
 //static int	TermDriver(char *);
 
@@ -38,11 +38,13 @@ void termWrite(USLOSS_Sysargs*);
 void
 start3(void)
 {
-   //  char	name[128];
-//     char    buf[10];
+    char	name[128];
+    char    buf[10];
 //     char    termbuf[10];
-//     int		i;
+    int		i;
     int		clockPID;
+    int 	diskPID0;
+    int 	diskPID1;
     int		pid;
     int		status;
     /*
@@ -96,14 +98,25 @@ start3(void)
      * driver, and perhaps do something with the pid returned.
      */
 
-    // for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-//         sprintf(buf, "%d", i);
-//         pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
-//         if (pid < 0) {
-//             USLOSS_Console("start3(): Can't create term driver %d\n", i);
-//             USLOSS_Halt(1);
-//         }
-//     }
+    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
+        sprintf(buf, "%d", i);
+        sprintf(name, "disk%d", i);
+        pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
+        
+        if (pid < 0) {
+            USLOSS_Console("start3(): Can't create disk driver %d\n", i);
+            USLOSS_Halt(1);
+        }
+        
+        if(i == 0){
+        	diskPID0 = pid;
+        	
+        }else{
+        	diskPID1 = pid;
+        }
+        //need more?
+        p4ProcTable[pid % MAXPROC].pid = pid;
+    }
 
     // May be other stuff to do here before going on to terminal drivers
 
@@ -126,7 +139,9 @@ start3(void)
      * Zap the device drivers
      */
     zap(clockPID);  // clock driver
-
+	zap(diskPID0);  // disk0 driver
+	zap(diskPID1);  // disk1 driver
+	
     // eventually, at the end:
     quit(0);
     
@@ -276,14 +291,28 @@ int diskWriteReal(int unit, int track, int first, int sectors,void *buffer){
 }
 
 void diskSize(USLOSS_Sysargs *args){
-
+	if (args->number != SYS_DISKSIZE){
+		terminateReal(1);
+	}
+	
+	int unit = (int)(long)args->arg1;
+	int *sectorSize;
+	int *sectorsInTrack;
+	int *tracksInDisk;
+	args->arg4 = diskSizeReal(unit, sectorSize, sectorsInTrack, tracksInDisk);
+	
+	args->arg1 = (void *)sectorSize;
+	args->arg2 = (void *)sectorsInTrack;
+	args->arg3 = (void *)tracksInDisk;
 }
 
 // Returns information about the size of the disk indicated by unit. The sector parameter is filled in with the number of bytes in a sector, track with the number of sectors in a track, and disk with the number of tracks in the disk.
 // Return values:
 // 		-1: invalid parameters
 // 		 0: disk size parameters returned successfully
-int diskSizeReal(int unit, int *sector, int *track, int *disk){
+int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk){
+	
+	
 	return 0;
 }
 
