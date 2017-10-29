@@ -35,7 +35,9 @@ extern int MboxCondReceive(int mbox_id, void *msg_ptr, int msg_max_size);
 extern int waitDevice(int type, int unit, int *status);
 
 /*  The USLOSS_Sysargs structure */
-typedef struct USLOSS_Sysargs
+// extern typedef struct USLOSS_Sysargs;
+
+typedef struct USLOSS_Sysargs 
 {
         int number;
         void *arg1;

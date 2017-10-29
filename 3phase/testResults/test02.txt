@@ -1,2 +1,0 @@
-start3(): started, and immediately return'ing a -3
-All processes completed.
