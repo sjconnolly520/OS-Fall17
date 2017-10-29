@@ -1,6 +1,5 @@
-libraries/linux/libpatrickphase1.a
-libraries/linux/libpatrickphase1debug.a
-libraries/linux/libpatrickphase2.a
+libpatrickphase1.a
+libpatrickphase2.a
+libpatrickphase3.a
 libraries/linux/libpatrickphase2debug.a
-libraries/linux/libpatrickphase3.a
 libraries/linux/libpatrickphase3debug.a

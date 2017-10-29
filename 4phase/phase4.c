@@ -1,12 +1,16 @@
 #include "usloss.h"
 #include "phase1.h"
 #include "phase2.h"
+#include "libuser.h"
+#include "usyscall.h"
 #include "phase3.h"
+#include "driver.h"
 #include "phase4.h"
+#include "providedPrototypes.h"
 #include <stdlib.h> /* needed for atoi() */
-
+#include <stdio.h>
 //sems for the drivers etc
-semaphore 	running;
+int 	running;
 
 /* ----------- Globals ------------- */
 p4Proc p4ProcTable[MAXPROC];
@@ -23,7 +27,7 @@ static int	DiskDriver(char *);
 static int	TermDriver(char *);
 
 /*-------------Proto------------------*/
-void sleep(USLOSS_Sysargs*);
+void sleep1(USLOSS_Sysargs*);
 void diskRead(USLOSS_Sysargs*);
 void diskWrite(USLOSS_Sysargs*);
 void diskSize(USLOSS_Sysargs*);
@@ -34,6 +38,7 @@ void
 start3(void)
 {
     char	name[128];
+    char    buf[10];
     char    termbuf[10];
     int		i;
     int		clockPID;
@@ -44,7 +49,7 @@ start3(void)
      */
 
 	// Initialize systemCallVec with appropriate system call functions
-    systemCallVec[SYS_SLEEP] 		= sleep;
+    systemCallVec[SYS_SLEEP] 		= sleep1;
     systemCallVec[SYS_DISKREAD] 	= diskRead;
     systemCallVec[SYS_DISKWRITE] 	= diskWrite;
     systemCallVec[SYS_DISKSIZE] 	= diskSize;
@@ -137,8 +142,8 @@ ClockDriver(char *arg)
     USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
 
     // Infinite loop until we are zap'd
-    while(! is_zapped()) {
-        result = waitdevice(USLOSS_CLOCK_DEV, 0, &status);
+    while(! isZapped()) {
+        result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
         if (result != 0) {
             return 0;
         }
@@ -173,7 +178,7 @@ static int TermDriver(char *arg){
 
 /*----------- USER AND KERNEL level functions ---------------- */
 
-void sleep(USLOSS_Sysargs *args){
+void sleep1(USLOSS_Sysargs *args){
 	
 }
 
@@ -203,7 +208,7 @@ int sleepReal(int seconds){
 	
 	for(prev = NULL, curr = SleepList;
 		curr != NULL && toAdd->wakeTime > curr->wakeTime;
-		prev = curr; curr = curr->nextSleeping){;}
+		prev = curr, curr = curr->nextSleeping){;}
 	
 	if(curr == NULL && prev == NULL){
 		SleepList = toAdd;
@@ -219,9 +224,9 @@ int sleepReal(int seconds){
 	
 	sempReal(p4ProcTable[pid % MAXPROC].semID);
 	
-	p4ProcTable[pid % MAXPROC].status 	= INACTIVE;
-	p4ProcTable[pid % MAXPROC].pid 		= INACTIVE;
-	p4ProcTable[pid % MAXPROC].wakeTime = INACTIVE;
+	p4ProcTable[pid % MAXPROC].status 	= NONACTIVE;
+	p4ProcTable[pid % MAXPROC].pid 		= NONACTIVE;
+	p4ProcTable[pid % MAXPROC].wakeTime = NONACTIVE;
 	
 	return 0;
 }

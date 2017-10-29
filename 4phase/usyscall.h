@@ -46,15 +46,15 @@
 
 
 /*  The USLOSS_Sysargs structure */
-typedef struct USLOSS_Sysargs
-{
-	int number;
-	void *arg1;
-	void *arg2;
-	void *arg3;
-	void *arg4;
-	void *arg5;
-} USLOSS_Sysargs;
+// typedef struct USLOSS_Sysargs
+// {
+// 	int number;
+// 	void *arg1;
+// 	void *arg2;
+// 	void *arg3;
+// 	void *arg4;
+// 	void *arg5;
+// } USLOSS_Sysargs;
 
 
 #endif	/*  _SYSCALL_H */
