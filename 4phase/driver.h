@@ -9,7 +9,9 @@
 
 typedef struct p4Proc p4Proc;
 typedef struct p4Proc *p4ProcPtr;
+typedef struct diskReqInfo diskReqInfo;
 typedef struct diskReqInfo *diskReqPtr;
+
 struct p4Proc{
     int             status;
     int             semID;
@@ -21,9 +23,16 @@ struct p4Proc{
 };
 
 struct diskReqInfo{
-	diskReqPtr				next;
+	diskReqPtr	        next;
 	
-	USLOSS_DeviceRequest	*request;
+    int                 pid;
+    int                 requestType;
+    int                 startSector;
+    int                 startTrack;
+    int                 unit;
+    int                 numSectors;
+    char *              buffer;
+    int                 semID;
 };
 
 #endif

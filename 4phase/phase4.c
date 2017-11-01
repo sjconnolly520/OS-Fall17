@@ -14,30 +14,37 @@ int 	running;
 
 /* ----------- Globals ------------- */
 p4Proc p4ProcTable[MAXPROC];
-
+int diskPID[USLOSS_DISK_UNITS];
 
 /* -- Lists --*/
 p4ProcPtr SleepList = NULL;
+diskReqPtr diskRequestList[USLOSS_DISK_UNITS];
+
 
 
 /*-------------Drivers-------------- */
 static int	ClockDriver(char *);
 static int	DiskDriver(char *);
+static void diskReadHandler(int);
+static void diskWriteHandler(int);
 //TODO is this right proto?
 //static int	TermDriver(char *);
 
 /*-------------Proto------------------*/
 void sleep1(USLOSS_Sysargs*);
 int sleepReal(int);
+
 void diskRead(USLOSS_Sysargs*);
+int diskReadReal(int, int, int, int, void *);
 void diskWrite(USLOSS_Sysargs*);
+void insertDiskRequest(diskReqPtr);
 void diskSize(USLOSS_Sysargs*);
+int diskSizeReal(int, int *, int *, int *);
+
 void termRead(USLOSS_Sysargs*);
 void termWrite(USLOSS_Sysargs*);
 
-void
-start3(void)
-{
+void start3(void) {
     char	name[128];
     char    buf[10];
 //     char    termbuf[10];
@@ -98,25 +105,21 @@ start3(void)
      * driver, and perhaps do something with the pid returned.
      */
 
-    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-        sprintf(buf, "%d", i);
-        sprintf(name, "disk%d", i);
-        pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
-        
-        if (pid < 0) {
-            USLOSS_Console("start3(): Can't create disk driver %d\n", i);
-            USLOSS_Halt(1);
-        }
-        
-        if(i == 0){
-        	diskPID0 = pid;
-        	
-        }else{
-        	diskPID1 = pid;
-        }
-        //need more?
-        p4ProcTable[pid % MAXPROC].pid = pid;
-    }
+//    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
+//        sprintf(buf, "%d", i);
+//        sprintf(name, "disk%d", i);
+//        pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
+//
+//        if (pid < 0) {
+//            USLOSS_Console("start3(): Can't create disk driver %d\n", i);
+//            USLOSS_Halt(1);
+//        }
+//
+//        diskPID[i] = pid;
+//        //need more?
+//        // get disk size
+//        p4ProcTable[pid % MAXPROC].pid = pid;
+//    }
 
     // May be other stuff to do here before going on to terminal drivers
 
@@ -139,8 +142,8 @@ start3(void)
      * Zap the device drivers
      */
     zap(clockPID);  // clock driver
-	zap(diskPID0);  // disk0 driver
-	zap(diskPID1);  // disk1 driver
+//    zap(diskPID0);  // disk0 driver
+//    zap(diskPID1);  // disk1 driver
 	
     // eventually, at the end:
     quit(0);
@@ -187,12 +190,90 @@ ClockDriver(char *arg)
     return 0;
 }
 
-// static int
-// DiskDriver(char *arg)
-// {
-//     return 0;
-// }
+static int
+DiskDriver(char *arg)
+{
+     int unit = atoi(arg);
+     
+     while (!isZapped()) {
+         sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
 
+         switch (diskRequestList[unit]->requestType) {
+             case USLOSS_DISK_READ:
+                 diskReadHandler(unit);
+                 break;
+                 
+             case USLOSS_DISK_WRITE:
+                 diskWriteHandle(unit);
+                 break;
+                 
+             default:
+                 terminateReal(1);
+                 break;
+         }
+     }
+ }
+
+
+static void diskReadHandler(int unit) {
+    
+    char sectorBuffer[512];
+    int bufferIndex = 0;
+    
+    diskReqPtr curReq = diskRequestList[unit];
+    diskRequestList[unit] = diskRequestList[unit]->next;
+    
+    int startTrack = curReq->startTrack;
+    int startSector = curReq->startSector;
+    int numSectors = curReq->numSectors;
+    
+    
+    USLOSS_DeviceRequest devReq;
+    devReq.opr = USLOSS_DISK_SEEK;
+    devReq.reg1 = (void *)(long)startSector;
+    
+    if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
+    }
+    
+    devReq.opr = USLOSS_DISK_READ;
+    devReq.reg1 = (void *)(long)startSector;
+    devReq.reg2 = (void *) curReq->buffer;
+    
+    if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
+    }
+    
+    USLOSS_Console("%s\n", curReq->buffer);
+ //   memcpy((char *)curReq->buffer, (char *)sectorBuffer, 512);
+    
+}
+
+static void diskWriteHandler(int unit) {
+    diskReqPtr curReq = diskRequestList[unit];
+    diskRequestList[unit] = diskRequestList[unit]->next;
+    
+    int startTrack = curReq->startTrack;
+    int startSector = curReq->startSector;
+    int numSectors = curReq->numSectors;
+    
+    USLOSS_DeviceRequest devReq;
+    devReq.opr = USLOSS_DISK_SEEK;
+    devReq.reg1 = (void *)(long)startSector;
+    
+    if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
+    }
+    
+    devReq.opr = USLOSS_DISK_WRITE;
+    devReq.reg1 = (void *)(long)startSector;
+    devReq.reg2 = (void *) curReq->buffer;
+    
+    if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
+    }
+    
+}
 
 // static int TermDriver(char *arg){
 // 	return 0;
@@ -257,8 +338,31 @@ int sleepReal(int seconds){
 	return 0;
 }
 
-void diskRead(USLOSS_Sysargs *args){
 
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+void diskRead(USLOSS_Sysargs *args){
+    
+    void * buffer = args->arg1;
+    int numSectors = (int)(long)args->arg2;
+    int startTrack = (int)(long)args->arg3;
+    int startSector = (int)(long)args->arg4;
+    int unit = (int)(long)args->arg5;
+    
+    int readResult = diskReadReal(unit, startTrack, startSector, numSectors, buffer);
+    
+    // If invalid arguments, store -1 in arg1, else store 0 in arg4
+    if (readResult == -1) {
+        args->arg4 = ((void *) (long) -1);
+    } else {
+        args->arg4 = ((void *) (long) 0);
+    }
+    
+    // Store the result of the disk read in arg1
+    args->arg1 = ((void *) (long) readResult);
 }
 
 // Reads sectors sectors from the disk indicated by unit, starting at track track and sector first. 
@@ -269,13 +373,91 @@ void diskRead(USLOSS_Sysargs *args){
 // Return values:
 // 			-1: invalid parameters
 // 			 0: sectors were read successfully >0: disk’s status register
-int diskReadReal(int unit, int track, int first, int sectors,
-                 void *buffer){
+int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void *buffer){
+    
+    // FIXME: Requests go beyond available diskLocations on topEnd
+    if (numSectors <= 0 || startTrack <= 0 || startSector <= 0) {
+        return -1;
+    }
+    
+    if (unit < 0 || unit > 1) {
+        return -1;
+    }
+    
+    // --- Add process to process table
+    
+    // Build diskRequest
+    diskReqInfo newRequest;
+    newRequest.requestType = USLOSS_DISK_READ;
+    newRequest.unit = unit;
+    newRequest.buffer = buffer;
+    newRequest.startSector = startSector;
+    newRequest.startTrack = startTrack;
+    newRequest.numSectors = numSectors;
+    newRequest.semID = SemCreate(0, 0);         // FIXME: Can we use the process' mailbox?
+    newRequest.next = NULL;
+    
+    // Insert into disk request queue
+    insertDiskRequest(&newRequest);
+    
+    // Wake up disk driver.
+    semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
+    
+    // --- Block process and wait ??? FIXME: How do we want to do this?
+    
+    // --- Remove from process table.
+    
+    // --- Return status
 	return 0;           
 }
 
-void diskWrite(USLOSS_Sysargs *args){
+void insertDiskRequest(diskReqPtr newRequest) {
+    int unit = newRequest->unit;
+    
+    // If the queue is empty, insert at head of list.
+    if (diskRequestList[unit] == NULL) {
+        diskRequestList[unit] = newRequest;
+    }
+    // If the new request's startTrack is the lowest in the queue
+    else if (newRequest->startTrack <= diskRequestList[unit]->startTrack){
+        newRequest->next = diskRequestList[unit];
+        diskRequestList[unit] = newRequest;
+    }
+    // Otherwise, insert in order.
+    else {
+        diskReqPtr follower = diskRequestList[unit];
+        diskReqPtr leader = follower->next;
+        
+        // Traverse the list leader has passed the spot to insert or has fallen off the end of the queue.
+        while (leader != NULL && leader->startTrack < newRequest->startTrack) {
+            leader = leader->next;
+            follower = follower->next;
+        }
+        // Insert between follower and leader.
+        follower->next = newRequest;
+        newRequest->next = leader;
+    }
+}
 
+void diskWrite(USLOSS_Sysargs *args){
+    
+    void * buffer = args->arg1;
+    int numSectors = (int)(long)args->arg2;
+    int startTrack = (int)(long)args->arg3;
+    int startSector = (int)(long)args->arg4;
+    int unit = (int)(long)args->arg5;
+    
+    int writeResult = diskReadReal(unit, startTrack, startSector, numSectors, buffer);
+    
+    // If invalid arguments, store -1 in arg1, else store 0 in arg4
+    if (writeResult == -1) {
+        args->arg4 = ((void *) (long) -1);
+    } else {
+        args->arg4 = ((void *) (long) 0);
+    }
+    
+    // Store the result of the disk read in arg1
+    args->arg1 = ((void *) (long) writeResult);
 }
 
 // Writes sectors sectors to the disk indicated by unit, starting at track track and sector first. 
@@ -286,9 +468,52 @@ void diskWrite(USLOSS_Sysargs *args){
 // Return values:
 // 			-1: invalid parameters
 // 			 0: sectors were written successfully >0: disk’s status register
-int diskWriteReal(int unit, int track, int first, int sectors,void *buffer){
-	return 0;
-}
+int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, void *buffer){
+    
+    // FIXME: Requests go beyond available diskLocations on topEnd
+    if (numSectors <= 0 || startTrack <= 0 || startSector <= 0) {
+        return -1;
+    }
+    
+    if (unit < 0 || unit > 1) {
+        return -1;
+    }
+    
+    // --- Add process to process table
+    
+    // Build diskRequest
+    diskReqInfo newRequest;
+    newRequest.requestType = USLOSS_DISK_WRITE;
+    newRequest.unit = unit;
+    newRequest.buffer = buffer;
+    newRequest.startSector = startSector;
+    newRequest.startTrack = startTrack;
+    newRequest.numSectors = numSectors;
+    newRequest.semID = SemCreate(0, 0);         // FIXME: Can we use the process' mailbox?
+    newRequest.next = NULL;
+    
+    // Insert into disk request queue
+    insertDiskRequest(&newRequest);
+    
+    // Wake up disk driver.
+    semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
+    
+    // --- Block process and wait ??? FIXME: How do we want to do this?
+    
+    // --- Remove from process table.
+    
+    // --- Return status
+    return 0;           }
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
 
 void diskSize(USLOSS_Sysargs *args){
 	if (args->number != SYS_DISKSIZE){
@@ -296,14 +521,14 @@ void diskSize(USLOSS_Sysargs *args){
 	}
 	
 	int unit = (int)(long)args->arg1;
-	int *sectorSize;
-	int *sectorsInTrack;
-	int *tracksInDisk;
-	args->arg4 = diskSizeReal(unit, sectorSize, sectorsInTrack, tracksInDisk);
+	int sectorSize;
+	int sectorsInTrack;
+	int tracksInDisk;
+	args->arg4 = (void *)(long) diskSizeReal(unit, &sectorSize, &sectorsInTrack, &tracksInDisk);
 	
-	args->arg1 = (void *)sectorSize;
-	args->arg2 = (void *)sectorsInTrack;
-	args->arg3 = (void *)tracksInDisk;
+	args->arg1 = (void *)(long)sectorSize;
+	args->arg2 = (void *)(long)sectorsInTrack;
+	args->arg3 = (void *)(long)tracksInDisk;
 }
 
 // Returns information about the size of the disk indicated by unit. The sector parameter is filled in with the number of bytes in a sector, track with the number of sectors in a track, and disk with the number of tracks in the disk.
@@ -312,7 +537,36 @@ void diskSize(USLOSS_Sysargs *args){
 // 		 0: disk size parameters returned successfully
 int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk){
 	
+    // Error check
+    if (unit < 0 || unit > 1) {
+        return -1;
+    }
 	
+    // FIXME: Add process to table
+    
+    // Build deviceRequest
+    USLOSS_DeviceRequest devReq;
+    devReq.opr = USLOSS_DISK_TRACKS;
+    devReq.reg1 = (void *)tracksInDisk;
+    
+    // Make call to DeviceInput.
+    if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+        USLOSS_Console("ERROR: diskSizeReal(): DeviceOutput failed");
+    }
+    
+    int status;
+    if (waitDevice(USLOSS_DISK_DEV, unit, &status) != 0) {
+        return -1;
+    }
+    if (status == USLOSS_DEV_ERROR) {
+        return -1;
+    }
+    
+    *sectorSize = USLOSS_DISK_SECTOR_SIZE;
+    *sectorsInTrack = USLOSS_DISK_TRACK_SIZE;
+    
+    // FIXME: Remove from process table
+    
 	return 0;
 }
 

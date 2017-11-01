@@ -29,7 +29,8 @@ int Sleep(int seconds){
 
 // DiskRead (syscall SYS_DISKREAD)
 // Input
-// 		arg1: the memory address to which to transfer arg2: number of sectors to read
+// 		arg1: the memory address to which to transfer
+//      arg2: number of sectors to read
 // 		arg3: the starting disk track number
 // 		arg4: the starting disk sector number
 // 		arg5: the unit number of the disk from which to read
@@ -39,6 +40,26 @@ int Sleep(int seconds){
 // 		arg4: -1 if illegal values are given as input; 0 otherwise.
 int DiskRead(void *diskBuffer, int unit, int track, int first, 
                        int sectors, int *status){
+    
+    CHECKMODE;
+    
+    USLOSS_Sysargs args;
+    args.number = SYS_DISKREAD;
+    args.arg1 = (void *)diskBuffer;
+    args.arg2 = (void *)(long)sectors;
+    args.arg3 = (void *)(long)track;
+    args.arg4 = (void *)(long)first;
+    args.arg5 = (void *)(long)unit;
+    
+    USLOSS_Syscall(&args);
+    
+    if (args.arg4 >= 0) {
+        return (int)(long)args.arg1;
+    }
+    else {
+        return -1;
+    }
+    
 	return 0;                      
 }
 
