@@ -44,6 +44,9 @@ int diskSizeReal(int, int *, int *, int *);
 void termRead(USLOSS_Sysargs*);
 void termWrite(USLOSS_Sysargs*);
 
+void addProcessToProcTable(void);
+void nullifyProcessEntry(void);
+
 void start3(void) {
     char	name[128];
     char    buf[10];
@@ -344,6 +347,7 @@ int sleepReal(int seconds){
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////// FIXME: BLOCK COMMENT //////////////
 void diskRead(USLOSS_Sysargs *args){
     
     void * buffer = args->arg1;
@@ -384,10 +388,12 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
         return -1;
     }
     
-    // --- Add process to process table
+    // Add process to process table
+    addProcessToProcTable();
     
     // Build diskRequest
     diskReqInfo newRequest;
+    newRequest.status = EMPTY;
     newRequest.requestType = USLOSS_DISK_READ;
     newRequest.unit = unit;
     newRequest.buffer = buffer;
@@ -403,42 +409,17 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
     
-    // --- Block process and wait ??? FIXME: How do we want to do this?
+    // Block process and wait for driver
+    sempReal(newRequest.semID);
     
-    // --- Remove from process table.
+    // Remove from process table.
+    nullifyProcessEntry();
     
-    // --- Return status
-	return 0;           
+    // Return status
+	return newRequest.status;
 }
 
-void insertDiskRequest(diskReqPtr newRequest) {
-    int unit = newRequest->unit;
-    
-    // If the queue is empty, insert at head of list.
-    if (diskRequestList[unit] == NULL) {
-        diskRequestList[unit] = newRequest;
-    }
-    // If the new request's startTrack is the lowest in the queue
-    else if (newRequest->startTrack <= diskRequestList[unit]->startTrack){
-        newRequest->next = diskRequestList[unit];
-        diskRequestList[unit] = newRequest;
-    }
-    // Otherwise, insert in order.
-    else {
-        diskReqPtr follower = diskRequestList[unit];
-        diskReqPtr leader = follower->next;
-        
-        // Traverse the list leader has passed the spot to insert or has fallen off the end of the queue.
-        while (leader != NULL && leader->startTrack < newRequest->startTrack) {
-            leader = leader->next;
-            follower = follower->next;
-        }
-        // Insert between follower and leader.
-        follower->next = newRequest;
-        newRequest->next = leader;
-    }
-}
-
+////////////// FIXME: BLOCK COMMENT //////////////
 void diskWrite(USLOSS_Sysargs *args){
     
     void * buffer = args->arg1;
@@ -479,17 +460,19 @@ int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, voi
         return -1;
     }
     
-    // --- Add process to process table
+    // Add process to process table
+    addProcessToProcTable();
     
     // Build diskRequest
     diskReqInfo newRequest;
+    newRequest.status = EMPTY;
     newRequest.requestType = USLOSS_DISK_WRITE;
     newRequest.unit = unit;
     newRequest.buffer = buffer;
     newRequest.startSector = startSector;
     newRequest.startTrack = startTrack;
     newRequest.numSectors = numSectors;
-    newRequest.semID = SemCreate(0, 0);         // FIXME: Can we use the process' mailbox?
+    newRequest.semID = p4ProcTable[getpid() % MAXPROC].semID;
     newRequest.next = NULL;
     
     // Insert into disk request queue
@@ -498,12 +481,62 @@ int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, voi
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
     
-    // --- Block process and wait ??? FIXME: How do we want to do this?
+    // Block process and wait for driver
+    sempReal(newRequest.semID);
     
-    // --- Remove from process table.
+    // Remove from process table.
+    nullifyProcessEntry();
     
-    // --- Return status
-    return 0;           }
+    // Return status
+    return newRequest.status;
+}
+
+////////////// FIXME: BLOCK COMMENT //////////////
+void insertDiskRequest(diskReqPtr newRequest) {
+    int unit = newRequest->unit;
+    
+    // If the queue is empty, insert at head of list.
+    if (diskRequestList[unit] == NULL) {
+        diskRequestList[unit] = newRequest;
+    }
+    // If the new request's startTrack is the lowest in the queue
+    else if (newRequest->startTrack <= diskRequestList[unit]->startTrack){
+        newRequest->next = diskRequestList[unit];
+        diskRequestList[unit] = newRequest;
+    }
+    // Otherwise, insert in order.
+    else {
+        diskReqPtr follower = diskRequestList[unit];
+        diskReqPtr leader = follower->next;
+        
+        // Traverse the list leader has passed the spot to insert or has fallen off the end of the queue.
+        while (leader != NULL && leader->startTrack < newRequest->startTrack) {
+            leader = leader->next;
+            follower = follower->next;
+        }
+        // Insert between follower and leader.
+        follower->next = newRequest;
+        newRequest->next = leader;
+    }
+}
+
+////////////// FIXME: BLOCK COMMENT //////////////
+void addProcessToProcTable() {
+    int currPID = getpid();
+    p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
+    p4ProcTable[currPID % MAXPROC].pid = currPID;
+    p4ProcTable[currPID % MAXPROC].status = ACTIVE; //FIXME: What status does a new process have?
+    p4ProcTable[currPID % MAXPROC].semID = SemCreate(0, 0);  // FIXME: Dustin wont like this. He's probably right.
+}
+
+////////////// FIXME: BLOCK COMMENT //////////////
+void nullifyProcessEntry() {
+    int currPID = getpid();
+    p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
+    p4ProcTable[currPID % MAXPROC].pid = currPID;
+    p4ProcTable[currPID % MAXPROC].status = EMPTY;
+    p4ProcTable[currPID % MAXPROC].semID = SemCreate(0, 0);  // FIXME: Dustin wont like this. He's probably right.
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////

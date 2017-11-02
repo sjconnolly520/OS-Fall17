@@ -2,10 +2,11 @@
 #define DRIVER_H
 
 #define NONACTIVE 	-1
-#define ACTIVE 		1
-#define SLEEP		2
-#define DISK		3
-#define TERM		4
+#define EMPTY        0
+#define ACTIVE 		 1
+#define SLEEP		 2
+#define DISK		 3
+#define TERM		 4
 
 typedef struct p4Proc p4Proc;
 typedef struct p4Proc *p4ProcPtr;
@@ -33,6 +34,7 @@ struct diskReqInfo{
     int                 numSectors;
     char *              buffer;
     int                 semID;
+    int                 status;
 };
 
 #endif
