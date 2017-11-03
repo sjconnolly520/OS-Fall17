@@ -19,14 +19,15 @@ int diskPID[USLOSS_DISK_UNITS];
 /* -- Lists --*/
 p4ProcPtr SleepList = NULL;
 diskReqPtr diskRequestList[USLOSS_DISK_UNITS];
+int numTracksOnDisk[USLOSS_DISK_UNITS];
 
 
 
 /*-------------Drivers-------------- */
 static int	ClockDriver(char *);
 static int	DiskDriver(char *);
-static void diskReadHandler(int);
-static void diskWriteHandler(int);
+int diskReadHandler(int);
+int diskWriteHandler(int);
 //TODO is this right proto?
 //static int	TermDriver(char *);
 
@@ -201,7 +202,8 @@ ClockDriver(char *arg)
 static int
 DiskDriver(char *arg)
 {
-     int unit = atoi(arg);
+    int unit = atoi(arg);
+    int diskResult;
     
     // --- Query the disk size
      
@@ -210,11 +212,11 @@ DiskDriver(char *arg)
 
          switch (diskRequestList[unit]->requestType) {
              case USLOSS_DISK_READ:
-                 diskReadHandler(unit);
+                 diskResult = diskReadHandler(unit);
                  break;
                  
              case USLOSS_DISK_WRITE:
-                 diskWriteHandle(unit);
+                 diskResult = diskWriteHandle(unit);
                  break;
                  
              default:
@@ -225,7 +227,7 @@ DiskDriver(char *arg)
  }
 
 
-static void diskReadHandler(int unit) {
+int diskReadHandler(int unit) {
     
     char sectorBuffer[512];
     int bufferIndex = 0;
@@ -259,32 +261,47 @@ static void diskReadHandler(int unit) {
     
 }
 
-static void diskWriteHandler(int unit) {
+int diskWriteHandler(int unit) {
     
     // Grab the current request from the front of the queue, remove it.
-    diskReqPtr curReq = diskRequestList[unit];
+    diskReqPtr currReq = diskRequestList[unit];
     diskRequestList[unit] = diskRequestList[unit]->next;
     
-    int startTrack = curReq->startTrack;
-    int startSector = curReq->startSector;
-    int numSectors = curReq->numSectors;
+    int currTrack = currReq->startTrack;
+    int currSector = currReq->startSector;
+    int numSectors = currReq->numSectors;
     
+    // Seek to specified track for writing
     USLOSS_DeviceRequest devReq;
     devReq.opr = USLOSS_DISK_SEEK;
-    devReq.reg1 = (void *)(long)startSector;
+    devReq.reg1 = (void *)(long)currSector;
     
     if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
         USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
     }
     
+    // Loop until all required sectors have been written
+    for (int i = 0; i < numSectors; i++) {
+        
+        // If we have written all sectors on the current track, seek to the next track before writing.
+        if (currSector >= USLOSS_DISK_TRACK_SIZE) {
+            currTrack++;
+            currSector = 0;
+            
+            // If we have exceded the number of tracks on the disk, fail
+            if (currTrack >= numTracksOnDisk[unit]) {
+                return -1;          // FIXME: I think this might actually be right, but make sure.
+            }
+        }
+    }
     devReq.opr = USLOSS_DISK_WRITE;
-    devReq.reg1 = (void *)(long)startSector;
-    devReq.reg2 = (void *) curReq->buffer;
+    devReq.reg1 = (void *)(long)currSector;
+    devReq.reg2 = (void *) currReq->buffer;
     
     if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
         USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
     }
-    
+    return 0;
 }
 
 // static int TermDriver(char *arg){
