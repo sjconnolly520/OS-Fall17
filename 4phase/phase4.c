@@ -263,6 +263,7 @@ int diskReadHandler(int unit) {
 
 int diskWriteHandler(int unit) {
     
+    int status;
     // Grab the current request from the front of the queue, remove it.
     diskReqPtr currReq = diskRequestList[unit];
     diskRequestList[unit] = diskRequestList[unit]->next;
@@ -274,11 +275,16 @@ int diskWriteHandler(int unit) {
     // Seek to specified track for writing
     USLOSS_DeviceRequest devReq;
     devReq.opr = USLOSS_DISK_SEEK;
-    devReq.reg1 = (void *)(long)currSector;
+    devReq.reg1 = (void *)(long)currTrack;
     
     if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
         USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
     }
+    
+    if (waitDevice(USLOSS_DISK_DEV, unit, &status) < 0 ){
+		currReq->status = status;
+		return -1;
+	}
     
     // Loop until all required sectors have been written
     for (int i = 0; i < numSectors; i++) {
@@ -288,19 +294,35 @@ int diskWriteHandler(int unit) {
             currTrack++;
             currSector = 0;
             
-            // If we have exceded the number of tracks on the disk, fail
-            if (currTrack >= numTracksOnDisk[unit]) {
-                return -1;          // FIXME: I think this might actually be right, but make sure.
-            }
+            // Seek to specified track for writing
+			USLOSS_DeviceRequest devReq;
+			devReq.opr = USLOSS_DISK_SEEK;
+			devReq.reg1 = (void *)(long)currTrack;
+	
+			if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+				USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
+			}
+			if (waitDevice(USLOSS_DISK_DEV, unit, &status) < 0 ){
+				currReq->status = status;
+				return -1;
+			}
+            
         }
+        
+        devReq.opr = USLOSS_DISK_WRITE;
+		devReq.reg1 = (void *)(long)currSector;
+		devReq.reg2 = currReq->buffer + i * 512;
+	
+		if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
+			USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
+		}
+		if (waitDevice(USLOSS_DISK_DEV, unit, &status) < 0 ){
+			currReq->status = status;
+			return -1;
+		}
+        currSector+=1;
     }
-    devReq.opr = USLOSS_DISK_WRITE;
-    devReq.reg1 = (void *)(long)currSector;
-    devReq.reg2 = (void *) currReq->buffer;
     
-    if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
-        USLOSS_Console("ERROR: diskReadHandler(): May need to do something with this error.\n");
-    }
     return 0;
 }
 
