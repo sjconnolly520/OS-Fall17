@@ -575,7 +575,7 @@ void nullifyProcessEntry() {
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = NONACTIVE;
     p4ProcTable[currPID % MAXPROC].status = EMPTY;
-    p4ProcTable[currPID % MAXPROC].semID = SemCreate(0, 0);  // FIXME: Dustin wont like this. He's probably right.
+    p4ProcTable[currPID % MAXPROC].semID = -1;  // FIXME: Dustin wont like this. He's probably right.
 }
 
 
@@ -615,7 +615,7 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
         return -1;
     }
 	
-    // FIXME: Add process to table
+    addProcessToProcTable();
     
     // Build deviceRequest
     USLOSS_DeviceRequest devReq;
@@ -638,7 +638,7 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
     *sectorSize = USLOSS_DISK_SECTOR_SIZE;
     *sectorsInTrack = USLOSS_DISK_TRACK_SIZE;
     
-    // FIXME: Remove from process table
+    nullifyProcessEntry();
     
 	return 0;
 }
