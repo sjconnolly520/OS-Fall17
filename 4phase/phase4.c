@@ -37,7 +37,10 @@ int sleepReal(int);
 void diskRead(USLOSS_Sysargs*);
 int diskReadReal(int, int, int, int, void *);
 void diskWrite(USLOSS_Sysargs*);
+int diskWriteReal(int, int, int, int, void *);
+
 void insertDiskRequest(diskReqPtr);
+
 void diskSize(USLOSS_Sysargs*);
 int diskSizeReal(int, int *, int *, int *);
 
@@ -47,6 +50,8 @@ void termWrite(USLOSS_Sysargs*);
 void addProcessToProcTable(void);
 void nullifyProcessEntry(void);
 
+
+/* --------- Functions ----------- */
 void start3(void) {
     char	name[128];
     char    buf[10];
@@ -197,6 +202,8 @@ static int
 DiskDriver(char *arg)
 {
      int unit = atoi(arg);
+    
+    // --- Query the disk size
      
      while (!isZapped()) {
          sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
@@ -253,6 +260,8 @@ static void diskReadHandler(int unit) {
 }
 
 static void diskWriteHandler(int unit) {
+    
+    // Grab the current request from the front of the queue, remove it.
     diskReqPtr curReq = diskRequestList[unit];
     diskRequestList[unit] = diskRequestList[unit]->next;
     
@@ -400,7 +409,7 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
     newRequest.startSector = startSector;
     newRequest.startTrack = startTrack;
     newRequest.numSectors = numSectors;
-    newRequest.semID = SemCreate(0, 0);         // FIXME: Can we use the process' mailbox?
+    newRequest.semID = p4ProcTable[getpid() % MAXPROC].semID;
     newRequest.next = NULL;
     
     // Insert into disk request queue
@@ -499,24 +508,38 @@ void insertDiskRequest(diskReqPtr newRequest) {
     if (diskRequestList[unit] == NULL) {
         diskRequestList[unit] = newRequest;
     }
-    // If the new request's startTrack is the lowest in the queue
-    else if (newRequest->startTrack <= diskRequestList[unit]->startTrack){
-        newRequest->next = diskRequestList[unit];
-        diskRequestList[unit] = newRequest;
-    }
     // Otherwise, insert in order.
     else {
         diskReqPtr follower = diskRequestList[unit];
         diskReqPtr leader = follower->next;
         
-        // Traverse the list leader has passed the spot to insert or has fallen off the end of the queue.
-        while (leader != NULL && leader->startTrack < newRequest->startTrack) {
-            leader = leader->next;
-            follower = follower->next;
+        // If the new request is to be inserted before the head returns to track0
+        if (newRequest->startTrack > diskRequestList[unit]->startTrack) {
+            // Traverse the list until leader has passed the spot to insert or has fallen off the end of the queue.
+            while (leader != NULL &&
+                   leader->startTrack < newRequest->startTrack &&
+                   leader->startTrack > follower->startTrack) {
+                leader = leader->next;
+                follower = follower->next;
+            }
+            // Insert between follower and leader.
+            follower->next = newRequest;
+            newRequest->next = leader;
         }
-        // Insert between follower and leader.
-        follower->next = newRequest;
-        newRequest->next = leader;
+        // Otherwise, traverse past the highest track request and continue tracking until the location is found
+        else {
+            while (leader != NULL && follower->startTrack <= leader->startTrack) {
+                leader = leader->next;
+                follower = follower->next;
+            }
+            while (leader != NULL && leader->startTrack <= newRequest->startTrack) {
+                leader = leader->next;
+                follower = follower->next;
+            }
+            // Insert between follower and leader.
+            follower->next = newRequest;
+            newRequest->next = leader;
+        }
     }
 }
 
@@ -533,7 +556,7 @@ void addProcessToProcTable() {
 void nullifyProcessEntry() {
     int currPID = getpid();
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
-    p4ProcTable[currPID % MAXPROC].pid = currPID;
+    p4ProcTable[currPID % MAXPROC].pid = NONACTIVE;
     p4ProcTable[currPID % MAXPROC].status = EMPTY;
     p4ProcTable[currPID % MAXPROC].semID = SemCreate(0, 0);  // FIXME: Dustin wont like this. He's probably right.
 }
