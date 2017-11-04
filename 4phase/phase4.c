@@ -222,8 +222,7 @@ DiskDriver(char *arg)
      
      while (!isZapped()) {
          sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
-USLOSS_Console("demp\n", unit);
-		if(diskRequestList[unit] == NULL) continue;
+         if(diskRequestList[unit] == NULL) continue;
          switch (diskRequestList[unit]->requestType) {
              case USLOSS_DISK_READ:
                  USLOSS_Console("DDr\n", unit);
