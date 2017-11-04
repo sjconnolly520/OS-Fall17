@@ -42,6 +42,7 @@ void diskWrite(USLOSS_Sysargs*);
 int diskWriteReal(int, int, int, int, void *);
 
 void insertDiskRequest(diskReqPtr);
+void diskQueuePrinter(int);
 
 void diskSize(USLOSS_Sysargs*);
 int diskSizeReal(int, int *, int *, int *);
@@ -617,9 +618,21 @@ void insertDiskRequest(diskReqPtr newRequest) {
     }
 }
 
+void diskQueuePrinter(int unit) {
+    diskReqPtr walker = diskRequestList[unit];
+    
+    while (walker != NULL) {
+        printf("Request Track = %d\n", walker->startTrack);
+        printf("Request Type  = %d\n", walker->requestType);
+        walker = walker->next;
+    }
+}
+
 ////////////// FIXME: BLOCK COMMENT //////////////
 void addProcessToProcTable() {
+    
     int currPID = getpid();
+    
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = currPID;
     p4ProcTable[currPID % MAXPROC].status = ACTIVE; //FIXME: What status does a new process have?
@@ -649,7 +662,7 @@ void diskSize(USLOSS_Sysargs *args){
 	if (args->number != SYS_DISKSIZE){
 		terminateReal(1);
 	}
-	
+    
 	int unit = (int)(long)args->arg1;
 	int sectorSize;
 	int sectorsInTrack;
@@ -671,7 +684,7 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
     if (unit < 0 || unit > 1) {
         return -1;
     }
-	
+    
     addProcessToProcTable();
     
     // Build deviceRequest
