@@ -78,8 +78,7 @@ int DiskWrite(void *diskBuffer, int unit, int track, int first,
 //      arg3: number of tracks in the disk
 //      arg4: -1 if illegal values are given as input; 0 otherwise.
 int DiskSize (int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk){
-	CHECKMODE;
-	
+	CHECKMODE
 	
 	USLOSS_Sysargs args;
 	args.number = SYS_DISKSIZE;

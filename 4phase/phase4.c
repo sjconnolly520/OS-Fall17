@@ -52,6 +52,8 @@ void termWrite(USLOSS_Sysargs*);
 void addProcessToProcTable(void);
 void nullifyProcessEntry(void);
 
+void setUserMode(void);
+
 
 /* --------- Functions ----------- */
 void start3(void) {
@@ -64,9 +66,13 @@ void start3(void) {
     int 	diskPID1;
     int		pid;
     int		status;
-    /*
-     * Check kernel mode here.
-     */
+    
+    // Check kernel mode here.
+    if (!(USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)) {
+        USLOSS_Console("start3(): called while in user mode. ");
+        USLOSS_Console("Halting...\n");
+        USLOSS_Halt(1);
+    }
 
 	// Initialize systemCallVec with appropriate system call functions
     systemCallVec[SYS_SLEEP] 		= sleep1;
@@ -115,21 +121,21 @@ void start3(void) {
      * driver, and perhaps do something with the pid returned.
      */
 
-//    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-//        sprintf(buf, "%d", i);
-//        sprintf(name, "disk%d", i);
-//        pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
-//
-//        if (pid < 0) {
-//            USLOSS_Console("start3(): Can't create disk driver %d\n", i);
-//            USLOSS_Halt(1);
-//        }
-//
-//        diskPID[i] = pid;
-//        //need more?
-//        // get disk size
-//        p4ProcTable[pid % MAXPROC].pid = pid;
-//    }
+   for (i = 0; i < USLOSS_DISK_UNITS; i++) {
+       sprintf(buf, "%d", i);
+       sprintf(name, "disk%d", i);
+       pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
+
+       if (pid < 0) {
+           USLOSS_Console("start3(): Can't create disk driver %d\n", i);
+           USLOSS_Halt(1);
+       }
+
+       diskPID[i] = pid;
+       //need more?
+       // get disk size
+       p4ProcTable[pid % MAXPROC].pid = pid;
+   }
 
     // May be other stuff to do here before going on to terminal drivers
 
@@ -152,8 +158,13 @@ void start3(void) {
      * Zap the device drivers
      */
     zap(clockPID);  // clock driver
-//    zap(diskPID0);  // disk0 driver
-//    zap(diskPID1);  // disk1 driver
+    
+	  
+	semvReal(p4ProcTable[diskPID[0] % MAXPROC].semID);
+    zap(diskPID[0]);
+
+    semvReal(p4ProcTable[diskPID[1] % MAXPROC].semID);
+	zap(diskPID[1]);
 	
     // eventually, at the end:
     quit(0);
@@ -210,26 +221,30 @@ DiskDriver(char *arg)
      
      while (!isZapped()) {
          sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
-
+USLOSS_Console("demp\n", unit);
+		if(diskRequestList[unit] == NULL) continue;
          switch (diskRequestList[unit]->requestType) {
              case USLOSS_DISK_READ:
+                 USLOSS_Console("DDr\n", unit);
                  diskResult = diskReadHandler(unit);
                  break;
                  
              case USLOSS_DISK_WRITE:
-                 diskResult = diskWriteHandle(unit);
+                 diskResult = diskWriteHandler(unit);
                  break;
                  
              default:
-                 terminateReal(1);
+                 USLOSS_Console("default case in DiskDriver\n");
                  break;
          }
      }
+     quit(0);
  }
 
 
 int diskReadHandler(int unit) {
-    
+            USLOSS_Console("DISKr handle %d\n", unit);
+
     int status;
     
     char sectorReadBuffer[512];
@@ -255,7 +270,6 @@ int diskReadHandler(int unit) {
     }
     
     for (int i = 0; i < numSectors; i++) {
-        
         // If we have written all sectors on the current track, seek to the next track before writing.
         if (currSector >= USLOSS_DISK_TRACK_SIZE) {
             currTrack++;
@@ -297,7 +311,8 @@ int diskReadHandler(int unit) {
 }
 
 int diskWriteHandler(int unit) {
-    
+                USLOSS_Console("DISKw handle %d\n", unit);
+
     int status;
     // Grab the current request from the front of the queue, remove it.
     diskReqPtr currReq = diskRequestList[unit];
@@ -488,7 +503,7 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
     
     // Insert into disk request queue
     insertDiskRequest(&newRequest);
-    
+    USLOSS_Console("DDr \n", unit, );
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
     
@@ -623,7 +638,7 @@ void addProcessToProcTable() {
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = currPID;
     p4ProcTable[currPID % MAXPROC].status = ACTIVE; //FIXME: What status does a new process have?
-    p4ProcTable[currPID % MAXPROC].semID = SemCreate(0, 0);  // FIXME: Dustin wont like this. He's probably right.
+    p4ProcTable[currPID % MAXPROC].semID = semcreateReal(0);  // FIXME: Dustin wont like this. He's probably right.
 }
 
 ////////////// FIXME: BLOCK COMMENT //////////////
@@ -655,10 +670,11 @@ void diskSize(USLOSS_Sysargs *args){
 	int sectorsInTrack;
 	int tracksInDisk;
 	args->arg4 = (void *)(long) diskSizeReal(unit, &sectorSize, &sectorsInTrack, &tracksInDisk);
-	
+
 	args->arg1 = (void *)(long)sectorSize;
 	args->arg2 = (void *)(long)sectorsInTrack;
 	args->arg3 = (void *)(long)tracksInDisk;
+	setUserMode();
 }
 
 // Returns information about the size of the disk indicated by unit. The sector parameter is filled in with the number of bytes in a sector, track with the number of sectors in a track, and disk with the number of tracks in the disk.
@@ -673,7 +689,7 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
     }
 	
     addProcessToProcTable();
-    
+
     // Build deviceRequest
     USLOSS_DeviceRequest devReq;
     devReq.opr = USLOSS_DISK_TRACKS;
@@ -728,3 +744,16 @@ void termWrite(USLOSS_Sysargs *args){
 int termWriteReal(int unit, int size, char *text){
 	return 0;
 }
+
+/* ------------------------------------------------------------------------
+ Name - setUserMode
+ Purpose     - Sets the PSR to UserMode, (Sets first bit to 0)
+ Parameters  - none
+ Returns     - nothing
+ Side Effects - Sets PSR Mode Bit to 0
+ ----------------------------------------------------------------------- */
+void setUserMode() {
+    if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
+        USLOSS_Console("ERROR: setUserMode(): Failed to change to User Mode.\n");
+    }
+}  /* setUserMode */
