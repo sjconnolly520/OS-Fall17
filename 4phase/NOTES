@@ -1,9 +1,7 @@
 
-Requests were not added to queue because DiskWrite was not written.
-    Not sure if fixed now.
-    Not sure if DiskWrite is written correctly.
+Requests were not added to queue because DiskWrite was not written..
 
-Simple printDiskRequestList function written, untested.
+Simple printDiskRequestList function written.
 
 diskWrite() was calling diskReadReal().
     Changed to diskWriteReal();
@@ -12,3 +10,13 @@ diskReadReal() & diskWriteReal() error checking altered.
     Now allow for startSector == 0, startTrack == 0
 
 Find/Remove "Hello"
+
+
+
+
+
+
+Questions for Dr. Homer:
+   - When we excede the number of tracks on the disk, do we seek to the next track on the disk?
+        Test13 does not appear to seek to the next track
+        Page 2, diskReadReal: After reading last sector in the track, it should read the first sector in the next track

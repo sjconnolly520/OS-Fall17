@@ -24,7 +24,7 @@ int Sleep(int seconds){
 	
 	USLOSS_Syscall(&args);
 	
-	return (long)args.arg4;
+	return (int)(long)args.arg4;
 }
 
 // DiskRead (syscall SYS_DISKREAD)
@@ -53,14 +53,8 @@ int DiskRead(void *diskBuffer, int unit, int track, int first,
     
     USLOSS_Syscall(&args);
     
-    if (args.arg4 >= 0) {
-        return (int)(long)args.arg1;
-    }
-    else {
-        return -1;
-    }
-    
-	return 0;                      
+    *status = (int)(long)args.arg1;
+    return (int)(long)args.arg4;
 }
 
 int DiskWrite(void *diskBuffer, int unit, int track, int first,
@@ -77,14 +71,8 @@ int DiskWrite(void *diskBuffer, int unit, int track, int first,
     
     USLOSS_Syscall(&args);
     
-    if (args.arg4 >= 0) {
-        return (int)(long)args.arg1;
-    }
-    else {
-        return -1;
-    }
-    
-    return 0;
+    *status = (int)(long)args.arg1;
+    return (int)(long)args.arg4;
 }
 
 // DiskSize (syscall SYS_DISKSIZE)

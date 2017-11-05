@@ -218,20 +218,24 @@ DiskDriver(char *arg)
     int unit = atoi(arg);
     int diskResult;
     
-    // --- Query the disk size
+    // --- FIXME: Query the disk size
      
      while (!isZapped()) {
          sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
+         
          if(diskRequestList[unit] == NULL) continue;
+         
          switch (diskRequestList[unit]->requestType) {
              case USLOSS_DISK_READ:
-                 USLOSS_Console("DDr\n", unit);
+//                 USLOSS_Console("DDr\n");
                  diskResult = diskReadHandler(unit);
+//                 USLOSS_Console("Result from READING = %d\n", diskResult);
                  break;
                  
              case USLOSS_DISK_WRITE:
-                 USLOSS_Console("DDw\n", unit);
+//                 USLOSS_Console("DDw\n");
                  diskResult = diskWriteHandler(unit);
+//                 USLOSS_Console("Result from WRITING = %d\n", diskResult);
                  break;
                  
              default:
@@ -249,7 +253,6 @@ int diskReadHandler(int unit) {
     char sectorReadBuffer[512];
     
     diskReqPtr currReq = diskRequestList[unit];
-    diskRequestList[unit] = diskRequestList[unit]->next;
     
     int currTrack = currReq->startTrack;
     int currSector = currReq->startSector;
@@ -305,7 +308,8 @@ int diskReadHandler(int unit) {
     } // For-loop
     
     currReq->status = status;
-    semvReal(p4ProcTable[currReq->pid % MAXPROC].semID);
+    diskRequestList[unit] = diskRequestList[unit]->next;
+    semvReal(currReq->semID);
     return 0;
 }
 
@@ -314,7 +318,6 @@ int diskWriteHandler(int unit) {
     int status;
     // Grab the current request from the front of the queue, remove it.
     diskReqPtr currReq = diskRequestList[unit];
-    diskRequestList[unit] = diskRequestList[unit]->next;
     
     int currTrack = currReq->startTrack;
     int currSector = currReq->startSector;
@@ -369,8 +372,10 @@ int diskWriteHandler(int unit) {
         
         currSector++;
     }
+    
     currReq->status = status;
-    semvReal(p4ProcTable[currReq->pid % MAXPROC].semID);
+    diskRequestList[unit] = diskRequestList[unit]->next;
+    semvReal(currReq->semID);
     return 0;
 }
 
@@ -497,11 +502,11 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
     newRequest.startTrack = startTrack;
     newRequest.numSectors = numSectors;
     newRequest.semID = p4ProcTable[getpid() % MAXPROC].semID;
+    newRequest.pid = getpid();
     newRequest.next = NULL;
     
     // Insert into disk request queue
     insertDiskRequest(&newRequest);
-    diskQueuePrinter(unit);
     
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
@@ -570,11 +575,11 @@ int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, voi
     newRequest.startTrack = startTrack;
     newRequest.numSectors = numSectors;
     newRequest.semID = p4ProcTable[getpid() % MAXPROC].semID;
+    newRequest.pid = getpid();
     newRequest.next = NULL;
     
     // Insert into disk request queue
     insertDiskRequest(&newRequest);
-    diskQueuePrinter(unit);
     
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
@@ -650,7 +655,6 @@ void diskQueuePrinter(int unit) {
 void addProcessToProcTable() {
     
     int currPID = getpid();
-    
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = currPID;
     p4ProcTable[currPID % MAXPROC].status = ACTIVE; //FIXME: What status does a new process have?
@@ -659,6 +663,7 @@ void addProcessToProcTable() {
 
 ////////////// FIXME: BLOCK COMMENT //////////////
 void nullifyProcessEntry() {
+    
     int currPID = getpid();
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = NONACTIVE;
