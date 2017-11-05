@@ -230,6 +230,7 @@ DiskDriver(char *arg)
                  break;
                  
              case USLOSS_DISK_WRITE:
+                 USLOSS_Console("DDw\n", unit);
                  diskResult = diskWriteHandler(unit);
                  break;
                  
@@ -243,10 +244,8 @@ DiskDriver(char *arg)
 
 
 int diskReadHandler(int unit) {
-            USLOSS_Console("DISKr handle %d\n", unit);
 
     int status;
-    
     char sectorReadBuffer[512];
     
     diskReqPtr currReq = diskRequestList[unit];
@@ -311,7 +310,6 @@ int diskReadHandler(int unit) {
 }
 
 int diskWriteHandler(int unit) {
-                USLOSS_Console("DISKw handle %d\n", unit);
 
     int status;
     // Grab the current request from the front of the queue, remove it.
@@ -335,7 +333,7 @@ int diskWriteHandler(int unit) {
 		currReq->status = status;
 		return -1;
 	}
-    
+
     // Loop until all required sectors have been written
     for (int i = 0; i < numSectors; i++) {
         
@@ -355,7 +353,6 @@ int diskWriteHandler(int unit) {
 				currReq->status = status;
 				return -1;
 			}
-            
         }
         
         devReq.opr = USLOSS_DISK_WRITE;
@@ -369,7 +366,8 @@ int diskWriteHandler(int unit) {
 			currReq->status = status;
 			return -1;
 		}
-        currSector+=1;
+        
+        currSector++;
     }
     currReq->status = status;
     semvReal(p4ProcTable[currReq->pid % MAXPROC].semID);
@@ -478,7 +476,7 @@ void diskRead(USLOSS_Sysargs *args){
 int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void *buffer){
     
     // FIXME: Requests go beyond available diskLocations on topEnd
-    if (numSectors <= 0 || startTrack <= 0 || startSector <= 0) {
+    if (numSectors <= 0 || startTrack < 0 || startSector < 0) {
         return -1;
     }
     
@@ -503,7 +501,8 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
     
     // Insert into disk request queue
     insertDiskRequest(&newRequest);
-    USLOSS_Console("DDr \n", unit, );
+    diskQueuePrinter(unit);
+    
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
     
@@ -526,7 +525,7 @@ void diskWrite(USLOSS_Sysargs *args){
     int startSector = (int)(long)args->arg4;
     int unit = (int)(long)args->arg5;
     
-    int writeResult = diskReadReal(unit, startTrack, startSector, numSectors, buffer);
+    int writeResult = diskWriteReal(unit, startTrack, startSector, numSectors, buffer);
     
     // If invalid arguments, store -1 in arg1, else store 0 in arg4
     if (writeResult == -1) {
@@ -550,14 +549,14 @@ void diskWrite(USLOSS_Sysargs *args){
 int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, void *buffer){
     
     // FIXME: Requests go beyond available diskLocations on topEnd
-    if (numSectors <= 0 || startTrack <= 0 || startSector <= 0) {
+    if (numSectors <= 0 || startTrack < 0 || startSector < 0) {
         return -1;
     }
     
     if (unit < 0 || unit > 1) {
         return -1;
     }
-    
+
     // Add process to process table
     addProcessToProcTable();
     
@@ -575,13 +574,14 @@ int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, voi
     
     // Insert into disk request queue
     insertDiskRequest(&newRequest);
+    diskQueuePrinter(unit);
     
     // Wake up disk driver.
     semvReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
-    
+
     // Block process and wait for driver
     sempReal(newRequest.semID);
-    
+
     // Remove from process table.
     nullifyProcessEntry();
     
@@ -635,11 +635,15 @@ void insertDiskRequest(diskReqPtr newRequest) {
 void diskQueuePrinter(int unit) {
     diskReqPtr walker = diskRequestList[unit];
     
+    printf("\n***********************************\n\n");
+    
     while (walker != NULL) {
-        printf("Request Track = %d\n", walker->startTrack);
         printf("Request Type  = %d\n", walker->requestType);
+        printf("Request Track = %d\n", walker->startTrack);
         walker = walker->next;
     }
+    
+    printf("\n***********************************\n\n");
 }
 
 ////////////// FIXME: BLOCK COMMENT //////////////

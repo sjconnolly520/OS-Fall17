@@ -65,7 +65,26 @@ int DiskRead(void *diskBuffer, int unit, int track, int first,
 
 int DiskWrite(void *diskBuffer, int unit, int track, int first,
                        int sectors, int *status){
-	return 0;
+    CHECKMODE;
+    
+    USLOSS_Sysargs args;
+    args.number = SYS_DISKWRITE;
+    args.arg1 = (void *)diskBuffer;
+    args.arg2 = (void *)(long)sectors;
+    args.arg3 = (void *)(long)track;
+    args.arg4 = (void *)(long)first;
+    args.arg5 = (void *)(long)unit;
+    
+    USLOSS_Syscall(&args);
+    
+    if (args.arg4 >= 0) {
+        return (int)(long)args.arg1;
+    }
+    else {
+        return -1;
+    }
+    
+    return 0;
 }
 
 // DiskSize (syscall SYS_DISKSIZE)

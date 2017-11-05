@@ -1,0 +1,14 @@
+
+Requests were not added to queue because DiskWrite was not written.
+    Not sure if fixed now.
+    Not sure if DiskWrite is written correctly.
+
+Simple printDiskRequestList function written, untested.
+
+diskWrite() was calling diskReadReal().
+    Changed to diskWriteReal();
+
+diskReadReal() & diskWriteReal() error checking altered.
+    Now allow for startSector == 0, startTrack == 0
+
+Find/Remove "Hello"
