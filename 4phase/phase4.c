@@ -639,11 +639,11 @@ void diskQueuePrinter(int unit) {
     
     while (walker != NULL) {
         printf("Request Type  = %d\n", walker->requestType);
-        printf("Request Track = %d\n", walker->startTrack);
+        printf("Request Track = %d\n\n", walker->startTrack);
         walker = walker->next;
     }
     
-    printf("\n***********************************\n\n");
+    printf("***********************************\n\n");
 }
 
 ////////////// FIXME: BLOCK COMMENT //////////////
