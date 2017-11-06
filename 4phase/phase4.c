@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 //sems for the drivers etc
-int 	running;
+int 	clockSemID;
 
 /* ----------- Globals ------------- */
 p4Proc p4ProcTable[MAXPROC];
@@ -71,7 +71,6 @@ void start3(void) {
     char    buf[10];
 	char    termbuf[10];
     int		i;
-    int		clockPID;
     int 	diskPID0;
     int 	diskPID1;
     int		pid;
@@ -92,71 +91,52 @@ void start3(void) {
     systemCallVec[SYS_TERMREAD] 	= termRead;
     systemCallVec[SYS_TERMWRITE] 	= termWrite;
     
-    /* init proc table */
+    // Initialize Phase4 Process Table
     for(int k = 0; k < MAXPROC; k++){
     	p4ProcTable[k].status 		= NONACTIVE;
     	p4ProcTable[k].pid 			= NONACTIVE;
     	p4ProcTable[k].semID 		= semcreateReal(0);
     	p4ProcTable[k].wakeTime		= NONACTIVE;
-    	
     	p4ProcTable[k].nextSleeping = NULL;
     }
     
-    /*
-     * Create clock device driver 
-     * I am assuming a semaphore here for coordination.  A mailbox can
-     * be used instead -- your choice.
-     */
-    running = semcreateReal(0);
-    clockPID = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
-    if (clockPID < 0) {
+    // Create clockDriver process and semaphore.
+    clockSemID = semcreateReal(0);
+    pid = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
+    if (pid < 0) {
 		USLOSS_Console("start3(): Can't create clock driver\n");
 		USLOSS_Halt(1);
     }
     
-    //set clockPID in proc table
-    p4ProcTable[clockPID % MAXPROC].pid = clockPID;
+    // Add clock process to process table
+    p4ProcTable[pid % MAXPROC].pid = pid;
     
-    
-    /*
-     * Wait for the clock driver to start. The idea is that ClockDriver
-     * will V the semaphore "running" once it is running.
-     */
+    // Block the clock driver on its semaphore. Will wake up once an interrupt happens
+    sempReal(clockSemID);
 
-    sempReal(running);
+    // Create the disk driver processes.
+    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
+        sprintf(buf, "%d", i);
+        sprintf(name, "disk%d", i);
+        pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
 
-    /*
-     * Create the disk device drivers here.  You may need to increase
-     * the stack size depending on the complexity of your
-     * driver, and perhaps do something with the pid returned.
-     */
+        if (pid < 0) {
+            USLOSS_Console("start3(): Can't create disk driver %d\n", i);
+            USLOSS_Halt(1);
+        }
+        
+        // Save the PIDs of the disk Drivers and add them to the process table so that they can have requests added to them
+        diskPID[i] = pid;
+        p4ProcTable[pid % MAXPROC].pid = pid;
+    }
 
-   for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-       sprintf(buf, "%d", i);
-       sprintf(name, "disk%d", i);
-       pid = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
-
-       if (pid < 0) {
-           USLOSS_Console("start3(): Can't create disk driver %d\n", i);
-           USLOSS_Halt(1);
-       }
-
-       diskPID[i] = pid;
-       //need more?
-       // get disk size
-       p4ProcTable[pid % MAXPROC].pid = pid;
-   }
-
-    // May be other stuff to do here before going on to terminal drivers
-
-    /*
-     * Create terminal device drivers.
-     */
-     for(i = 0; i < USLOSS_TERM_UNITS; i++){
-     	sprintf(termbuf, "%d", i);
-       	sprintf(name, "termDriver%d", i);
+    // Create Terminal Processes (Drivers, Readers, & Writers)
+    for(i = 0; i < USLOSS_TERM_UNITS; i++){
+        sprintf(termbuf, "%d", i);
+        sprintf(name, "termDriver%d", i);
        	pid = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
-     	if (pid < 0) {
+     	
+        if (pid < 0) {
            USLOSS_Console("start3(): Can't create TermDriver %d\n", i);
            USLOSS_Halt(1);
         }
@@ -223,7 +203,7 @@ ClockDriver(char *arg)
     int status;
 
     // Let the parent know we are running and enable interrupts.
-    semvReal(running);
+    semvReal(clockSemID);
     if (USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT) == USLOSS_ERR_INVALID_PSR){
     	USLOSS_Console("ERROR: ClockDriver(): Failed to change to User Mode.\n");
     }
@@ -811,7 +791,7 @@ int termReadReal(int unit, int size, char *buffer){
 	int result;
 	
 	char linebuf[MAXLINE];
-	result = MboxReceive(readline[unit], lineBuf, MAXLINE);
+	result = MboxReceive(readline[unit], linebuf, MAXLINE);
 	
 	strncpy(buffer, linebuf, size);
 	return result;
@@ -819,7 +799,20 @@ int termReadReal(int unit, int size, char *buffer){
 }
 
 void termWrite(USLOSS_Sysargs *args){
-
+    char *buffer = args->arg2;
+    int size = (int)(long)args->arg2;
+    int unit = (int)(long)args->arg3;
+    
+    int resultCharsWritten;
+    
+    resultCharsWritten = termWriteReal(unit, size, buffer);
+    
+    if(resultCharsWritten < 0 ){
+        args->arg4 = (void *)(long)-1;
+    }else{
+        args->arg4 = (void *)(long)0;
+    }
+    args->arg2 = (void *)(long)resultCharsWritten;
 }
 
 // This routine writes size characters — a line of text pointed to by text to the terminal 
