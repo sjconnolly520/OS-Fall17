@@ -22,11 +22,20 @@ p4ProcPtr SleepList = NULL;
 diskReqPtr diskRequestList[USLOSS_DISK_UNITS];
 int numTracksOnDisk[USLOSS_DISK_UNITS];
 
+int termPID[USLOSS_TERM_UNITS];
+int charInMboxID[USLOSS_TERM_UNITS];
+int charOutMboxID[USLOSS_TERM_UNITS];
+int termReadPID[USLOSS_TERM_UNITS];
+int termWritePID[USLOSS_TERM_UNITS];
+char readline[USLOSS_TERM_UNITS][MAXLINE];
+
+
 
 
 /*-------------Drivers-------------- */
 static int	ClockDriver(char *);
 static int	DiskDriver(char *);
+static int	TermDriver(char *);
 int diskReadHandler(int);
 int diskWriteHandler(int);
 //TODO is this right proto?
@@ -60,7 +69,7 @@ void setUserMode(void);
 void start3(void) {
     char	name[128];
     char    buf[10];
-//     char    termbuf[10];
+	char    termbuf[10];
     int		i;
     int		clockPID;
     int 	diskPID0;
@@ -143,6 +152,41 @@ void start3(void) {
     /*
      * Create terminal device drivers.
      */
+     for(i = 0; i < USLOSS_TERM_UNITS; i++){
+     	sprintf(termbuf, "%d", i);
+       	sprintf(name, "termDriver%d", i);
+       	pid = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
+     	if (pid < 0) {
+           USLOSS_Console("start3(): Can't create TermDriver %d\n", i);
+           USLOSS_Halt(1);
+        }
+     	termPID[i] = pid;
+     	
+     	sprintf(termbuf, "%d", i);
+       	sprintf(name, "termDriver%d", i);
+       	pid = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
+     	if (pid < 0) {
+           USLOSS_Console("start3(): Can't create TermReader %d\n", i);
+           USLOSS_Halt(1);
+        }
+     	termReadPID[i] = pid;
+     	
+     	sprintf(termbuf, "%d", i);
+       	sprintf(name, "termDriver%d", i);
+       	pid = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
+     	
+     	if (pid < 0) {
+           USLOSS_Console("start3(): Can't create TermWriter %d\n", i);
+           USLOSS_Halt(1);
+        }
+     	termWritePID[i] = pid;
+     	
+     	
+		charInMboxID[i] = MboxCreate(1, sizeof(char));
+		charOutMboxID[i];
+		int termReadPID[i];
+		int termWritePID[i];
+     }
 
 
     /*
@@ -379,9 +423,9 @@ int diskWriteHandler(int unit) {
     return 0;
 }
 
-// static int TermDriver(char *arg){
-// 	return 0;
-// }
+static int TermDriver(char *arg){
+	return 0;
+}
 
 /*----------- USER AND KERNEL level functions ---------------- */
 
@@ -738,17 +782,40 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
 }
 
 void termRead(USLOSS_Sysargs *args){
-
+	char *buffer = args->arg2;
+	int size = (int)(long)args->arg2;
+	int unit = (int)(long)args->arg3;
+	
+	int resultCharsRead;
+	
+	resultCharsRead = termReadReal(unit, size, buffer);
+	
+	if(resultCharsRead < 0 ){
+		args->arg4 = (void *)(long)-1;
+	}else{
+		args->arg4 = (void *)(long)0;
+	}
+	args->arg2 = (void *)(long)resultCharsRead;
 }
 
-// This routine reads a line of text from the terminal indicated by unit into the buffer pointed to by buffer. A line of text is terminated by a newline character (‘\n’), which is copied into the buffer along with the other characters in the line. If the length of a line of input is greater than the value of the size parameter, then the first size characters are returned and the rest discarded.
+// This routine reads a line of text from the terminal indicated by unit into the buffer pointed to by buffer. A line of text is terminated by a newline character (‘\n’), which is copied into the buffer along with the other characters in the line. 
+// If the length of a line of input is greater than the value of the size parameter, then the first size characters are returned and the rest discarded.
 // The terminal device driver should maintain a fixed-size buffer of 10 lines to store characters read prior to an invocation of termRead (i.e. a read-ahead buffer). Characters should be discarded if the read-ahead buffer overflows.
 // Return values:
 // 			-1: invalid parameters
 // 			>0: number of characters read
 int termReadReal(int unit, int size, char *buffer){
-
-	return 0;
+	if (unit < 0 || unit > 3) return -1;
+	if (size < 0) return -1;
+	
+	int result;
+	
+	char linebuf[MAXLINE];
+	result = MboxReceive(readline[unit], lineBuf, MAXLINE);
+	
+	strncpy(buffer, linebuf, size);
+	return result;
+	
 }
 
 void termWrite(USLOSS_Sysargs *args){

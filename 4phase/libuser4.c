@@ -99,12 +99,30 @@ int DiskSize (int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk)
 	return (int)(long)args.arg4;
 }
 
-int TermRead (char *buffer, int bufferSize, int unitID,
-                       int *numCharsRead){
-	return 0;                     
+int TermRead (char *buffer, int bufferSize, int unitID, int *numCharsRead){
+	CHECKMODE
+	
+	USLOSS_Sysargs args;
+	args.number = SYS_TERMREAD;
+	args.arg1 = (void *)buffer;
+	args.arg2 = (void *)(long)bufferSize;
+	args.arg3 = (void *)(long)unitID;
+	USLOSS_Syscall(&args);
+
+	*numCharsRead 	= (int)(long)args.arg2;
+	return (int)(long)args.arg4;
 }
 
-int TermWrite(char *buffer, int bufferSize, int unitID,
-                       int *numCharsRead){
-	return 0;                      
+int TermWrite(char *buffer, int bufferSize, int unitID, int *numCharsRead){
+	CHECKMODE
+	
+	USLOSS_Sysargs args;
+	args.number = SYS_TERMWRITE;
+	args.arg1 = (void *)buffer;
+	args.arg2 = (void *)(long)bufferSize;
+	args.arg3 = (void *)(long)unitID;
+	USLOSS_Syscall(&args);
+
+	*numCharsRead 	= (int)(long)args.arg2;
+	return (int)(long)args.arg4;
 }
