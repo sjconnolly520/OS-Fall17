@@ -28,6 +28,8 @@ int charOutMboxID[USLOSS_TERM_UNITS];
 int termReadPID[USLOSS_TERM_UNITS];
 int termWritePID[USLOSS_TERM_UNITS];
 char readline[USLOSS_TERM_UNITS][MAXLINE];
+int readBufferMBox[USLOSS_TERM_UNITS];
+
 
 
 
@@ -39,7 +41,8 @@ static int	TermDriver(char *);
 int diskReadHandler(int);
 int diskWriteHandler(int);
 //TODO is this right proto?
-//static int	TermDriver(char *);
+static int TermReader(char *);
+static int TermWriter(char *);
 
 /*-------------Proto------------------*/
 void sleep1(USLOSS_Sysargs*);
@@ -163,7 +166,7 @@ void start3(void) {
      	termPID[i] = pid;
      	
      	sprintf(termbuf, "%d", i);
-       	sprintf(name, "termDriver%d", i);
+       	sprintf(name, "termReader%d", i);
        	pid = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
      	if (pid < 0) {
            USLOSS_Console("start3(): Can't create TermReader %d\n", i);
@@ -172,7 +175,7 @@ void start3(void) {
      	termReadPID[i] = pid;
      	
      	sprintf(termbuf, "%d", i);
-       	sprintf(name, "termDriver%d", i);
+       	sprintf(name, "termWriter%d", i);
        	pid = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
      	
      	if (pid < 0) {
@@ -182,12 +185,11 @@ void start3(void) {
      	termWritePID[i] = pid;
      	
      	
-		charInMboxID[i] = MboxCreate(1, sizeof(char));
-		charOutMboxID[i];
-		int termReadPID[i];
-		int termWritePID[i];
+		charInMboxID[i] = MboxCreate(0, sizeof(char));
+		charOutMboxID[i] = MboxCreate(0, sizeof(char));
+		readBufferMBox[i] = MboxCreate(10, 80 * sizeof(char));
      }
-
+	//dumpProcesses();
 
     /*
      * Create first user-level process and wait for it to finish.
@@ -196,6 +198,7 @@ void start3(void) {
      * I'm assuming kernel-mode versions of the system calls
      * with lower-case first letters, as shown in provided_prototypes.h
      */
+    USLOSS_Console("start3():starting s4 %d\n", i);
     pid = spawnReal("start4", start4, NULL, 4 * USLOSS_MIN_STACK, 3);
     pid = waitReal(&status);
 
@@ -422,10 +425,121 @@ int diskWriteHandler(int unit) {
     semvReal(currReq->semID);
     return 0;
 }
+/*
+ *  These are the status codes returned by USLOSS_DeviceInput(). In general, 
+ *  the status code is in the lower byte of the int returned; the upper
+ *  bytes may contain other info. See the documentation for the
+ *  specific device for details.
+ */
+// #define USLOSS_DEV_READY	0
+// #define USLOSS_DEV_BUSY		1
+// #define USLOSS_DEV_ERROR	2
+
+/* 
+ * USLOSS_DeviceOutput() and USLOSS_DeviceInput() will return DEV_OK if their 
+ * arguments were valid and the device is ready, DEV_BUSY if the arguments were valid
+ * but the device is busy, and DEV_INVALID otherwise. By valid, the device 
+ * type and unit must correspond to a device that exists. 
+ */
+
+// #define USLOSS_DEV_OK		USLOSS_DEV_READY
+// #define USLOSS_DEV_INVALID	USLOSS_DEV_ERROR
+
+/*
+ * These are the fields of the terminal status registers. A call to
+ * USLOSS_DeviceInput will return the status register, and you can use these
+ * macros to extract the fields. The xmit and recv fields contain the
+ * status codes listed above.
+ */
+
+// #define USLOSS_TERM_STAT_CHAR(status)\
+// 	(((status) >> 8) & 0xff)	/* character received, if any */
+
+// #define	USLOSS_TERM_STAT_XMIT(status)\
+// 	(((status) >> 2) & 0x3) 	/* xmit status for unit */
+
+// #define	USLOSS_TERM_STAT_RECV(status)\
+// 	((status) & 0x3)		/* recv status for unit */
+
+/*
+ * These are the fields of the terminal control registers. You can use
+ * these macros to put together a control word to write to the
+ * control registers via USLOSS_DeviceOutput.
+ */
+
+// #define USLOSS_TERM_CTRL_CHAR(ctrl, ch)\
+// 	((ctrl) | (((ch) & 0xff) << 8))/* char to send, if any */
+// 
+// #define	USLOSS_TERM_CTRL_XMIT_INT(ctrl)\
+// 	((ctrl) | 0x4)			/* enable xmit interrupts */
+// 
+// #define	USLOSS_TERM_CTRL_RECV_INT(ctrl)\
+// 	((ctrl) | 0x2)			/* enable recv interrupts */
+// 
+// #define USLOSS_TERM_CTRL_XMIT_CHAR(ctrl)\
+// 	((ctrl) | 0x1)			/* xmit the char in the upper bits */
 
 static int TermDriver(char *arg){
+	short ctrl = 0;
+	USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
+	
+	int unit = atoi(arg);
+	
+	int wdResult, status;
+	while(!isZapped()){
+				dumpProcesses();
+		wdResult = waitDevice(USLOSS_TERM_DEV,unit,&status);
+		
+		if (wdResult != 0) return 1;
+		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
+			char toSend = USLOSS_TERM_STAT_CHAR(status);
+			MboxSend(charInMboxID[unit], &toSend, sizeof(char));
+		}
+		 
+		
+		
+	}
+	
 	return 0;
 }
+
+static int TermReader(char *arg){
+	int unit = atoi(arg);
+	
+	char toBuild[80];
+	char *input;
+	int counter = 0;
+	int result;
+	while(!isZapped()){
+		result = MboxReceive(charInMboxID[unit], input, sizeof(char));
+		if(result == -1) return 0;
+		
+		if(input == '\n' || counter == MAXLINE - 1){
+			toBuild[counter++] = '\n';
+		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
+		 	counter = 0;
+		}else{
+			toBuild[counter++] = input;
+		}
+		// toBuild[counter++] = input;
+// 		if(counter == MAXLINE || toBuild[counter] == '\n'){
+// 		 	counter = 0;
+// 		 	MBoxCondSend(readBufferMBox[unit], (void *)toBuild, 80);
+// 		}
+	}
+
+}
+
+static int TermWriter(char *arg){
+	int unit = atoi(arg);
+	int wdResult, status;
+	while(!isZapped()){
+		wdResult = waitDevice(USLOSS_TERM_DEV,unit,&status);
+	}
+	quit(0);
+	return 1;
+}
+
 
 /*----------- USER AND KERNEL level functions ---------------- */
 
@@ -811,7 +925,7 @@ int termReadReal(int unit, int size, char *buffer){
 	int result;
 	
 	char linebuf[MAXLINE];
-	result = MboxReceive(readline[unit], lineBuf, MAXLINE);
+	result = MboxCondReceive(readBufferMBox[unit], linebuf, MAXLINE);
 	
 	strncpy(buffer, linebuf, size);
 	return result;
