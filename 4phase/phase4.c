@@ -152,7 +152,7 @@ void start3(void) {
         // Create Terminal Reader [i] Process
      	sprintf(termbuf, "%d", i);
        	sprintf(name, "termReader%d", i);
-       	pid = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
+       	pid = fork1(name, TermReader, termbuf, USLOSS_MIN_STACK, 2);
      	if (pid < 0) {
            USLOSS_Console("start3(): Can't create TermReader %d\n", i);
            USLOSS_Halt(1);
@@ -165,7 +165,7 @@ void start3(void) {
         // Create Terminal Writer [i] Process
      	sprintf(termbuf, "%d", i);
        	sprintf(name, "termWriter%d", i);
-       	pid = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
+       	pid = fork1(name, TermWriter, termbuf, USLOSS_MIN_STACK, 2);
      	
      	if (pid < 0) {
            USLOSS_Console("start3(): Can't create TermWriter %d\n", i);
@@ -183,6 +183,8 @@ void start3(void) {
 		charInMboxID[i] = MboxCreate(0, sizeof(char));
 		charOutMboxID[i] = MboxCreate(0, sizeof(char));
 		readBufferMBox[i] = MboxCreate(10, 80 * sizeof(char));
+		
+		
      }
 
     /*
@@ -192,7 +194,7 @@ void start3(void) {
      * I'm assuming kernel-mode versions of the system calls
      * with lower-case first letters, as shown in provided_prototypes.h
      */
-    
+
     // Create Start4 Process to perform user/test procedures
     pid = spawnReal("start4", start4, NULL, 4 * USLOSS_MIN_STACK, 3);
     pid = waitReal(&status);
@@ -210,9 +212,12 @@ void start3(void) {
         zap(diskPID[i]);
     }
 
-    // FIXME: Zap the term devices
+    USLOSS_Console("start4 zapping!\n");
+
     for (int i = 0; i < USLOSS_TERM_UNITS; i++) {
-        // FIXME: Zappity-zip-zap
+        zap(termReadPID[i]);
+        //zap(termWritePID[i]);
+        zap(termPID[i]);
     }
     
     // Quit the program run. All processes should terminate.
@@ -265,7 +270,7 @@ static int ClockDriver (char *arg) {
 static int DiskDriver(char *arg) {
     int unit = atoi(arg);
     int diskResult;
-    
+
     // --- FIXME: Query the disk size
     
     // Loop indefinitely until the process is zapped.
@@ -511,30 +516,36 @@ int diskWriteHandler(int unit) {
 ////////////// FIXME: BLOCK COMMENT //////////////
 ////////////// FIXME: IN-LINE COMMENTS //////////////
 static int TermDriver(char *arg){
-	
+    
 	int unit = atoi(arg);
-    short ctrl = 0;
-    
-    USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
+	int ctrl = 0;
+	ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
+	if ( USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)ctrl)  ==  USLOSS_DEV_INVALID){
+		USLOSS_Console("termDriver(%d):  returned an error setting rcv int\n");
+		//quit(1); // return;?
+	} 
 	
-	int wdResult, status;
-    
-    // Loop indefinitely, until Term Driver is zapped
+	int result, status;
 	while(!isZapped()){
-		wdResult = waitDevice(USLOSS_TERM_DEV,unit,&status);
+		result = waitDevice(USLOSS_TERM_DEV,unit,&status);
 		
-		if (wdResult != 0) return 1;
-        
-        // If the current character is to be read from the Terminal, send it to the ReadDriver
+		if (result != 0){
+			USLOSS_Console("TermDriver(%d): result %d . Returning\n", unit, result);
+			continue;
+			//return 1;
+		}
+
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
 			char toSend = USLOSS_TERM_STAT_CHAR(status);
+			USLOSS_Console("TermDriver(%d): %c\n", unit, toSend);
 			MboxSend(charInMboxID[unit], &toSend, sizeof(char));
 		}
-		 
+// 		 
 		
-		
+
 	}
-	
+	USLOSS_Console("TermDriver%d\n", unit);
+	quit(0);
 	return 0;
 }
 
@@ -544,15 +555,20 @@ static int TermReader(char *arg){
 	int unit = atoi(arg);
 	
 	char toBuild[80];
-	char *input;
+	char input;
 	int counter = 0;
 	int result;
 	while(!isZapped()){
-		result = MboxReceive(charInMboxID[unit], input, sizeof(char));
-		if(result == -1) return 0;
-		
+		result = MboxReceive(charInMboxID[unit], &input, sizeof(char));
+		if(result == -1){
+			USLOSS_Console("TermReader(%d): returning\n", unit);
+			return 0;
+		} 
+		USLOSS_Console("TermReader(%d): rcv'd %c\n", unit, input);
+
 		if(input == '\n' || counter == MAXLINE - 1){
-			toBuild[counter++] = '\n';
+			toBuild[counter++] = '\0';
+		 	USLOSS_Console("TermReader(%d): toBuild: %s \n", unit, toBuild);
 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
 		 	counter = 0;
 		}else{
@@ -564,16 +580,17 @@ static int TermReader(char *arg){
 // 		 	MBoxCondSend(readBufferMBox[unit], (void *)toBuild, 80);
 // 		}
 	}
-
+	quit(1);
+	return 0;
 }
 ////////////// FIXME: BLOCK COMMENT //////////////
 ////////////// FIXME: IN-LINE COMMENTS //////////////
 static int TermWriter(char *arg){
-	int unit = atoi(arg);
-	int wdResult, status;
-	while(!isZapped()){
-		wdResult = waitDevice(USLOSS_TERM_DEV,unit,&status);
-	}
+	// int unit = atoi(arg);
+// 	int result, status;
+// 	while(!isZapped()){
+// 		//result = waitDevice(USLOSS_TERM_DEV,unit,&status);
+// 	}
 	quit(0);
 	return 1;
 }
@@ -988,10 +1005,14 @@ int termReadReal(int unit, int size, char *buffer){
 	if (size < 0) return -1;
 	
 	int result;
+	int stat = 6;
 	
 	char linebuf[MAXLINE];
-	result = MboxCondReceive(readBufferMBox[unit], linebuf, MAXLINE);
-	
+	result = MboxReceive(readBufferMBox[unit], linebuf, MAXLINE);
+	if(result < 0){
+		USLOSS_Console("termReadReal() received %d. Returning...\n", result);
+		return result;
+	}
 	strncpy(buffer, linebuf, size);
 	return result;
 	
