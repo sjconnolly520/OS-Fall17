@@ -81,6 +81,8 @@ extern void (*USLOSS_IntVec[USLOSS_NUM_INTS])(int dev, void *arg);
  * # of units of each device type
  */
 
+////////////// FIXME: BLOCK COMMENT //////////////
+
 #define USLOSS_CLOCK_UNITS	1
 #define USLOSS_ALARM_UNITS	1
 #define USLOSS_DISK_UNITS	2

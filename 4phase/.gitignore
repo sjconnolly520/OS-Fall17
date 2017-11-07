@@ -3,3 +3,10 @@ libpatrickphase2.a
 libpatrickphase3.a
 libraries/linux/libpatrickphase2debug.a
 libraries/linux/libpatrickphase3debug.a
+disk0
+disk1
+term0.in
+term1.in
+term2.in
+term3.in
+testphase4.ksh
