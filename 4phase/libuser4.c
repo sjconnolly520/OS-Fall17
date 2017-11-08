@@ -113,7 +113,7 @@ int TermRead (char *buffer, int bufferSize, int unitID, int *numCharsRead){
 	return (int)(long)args.arg4;
 }
 
-int TermWrite(char *buffer, int bufferSize, int unitID, int *numCharsRead){
+int TermWrite(char *buffer, int bufferSize, int unitID, int *numCharsWritten){
 	CHECKMODE
 	
 	USLOSS_Sysargs args;
@@ -123,6 +123,6 @@ int TermWrite(char *buffer, int bufferSize, int unitID, int *numCharsRead){
 	args.arg3 = (void *)(long)unitID;
 	USLOSS_Syscall(&args);
 
-	*numCharsRead 	= (int)(long)args.arg2;
+	*numCharsWritten = (int)(long)args.arg2;
 	return (int)(long)args.arg4;
 }

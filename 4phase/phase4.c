@@ -29,6 +29,8 @@ int termReadPID[USLOSS_TERM_UNITS];
 int termWritePID[USLOSS_TERM_UNITS];
 char readline[USLOSS_TERM_UNITS][MAXLINE];
 int readBufferMBox[USLOSS_TERM_UNITS];
+int writeBufferMBox[USLOSS_TERM_UNITS];
+int charsWrittenMBox[USLOSS_TERM_UNITS];
 
 
 
@@ -150,6 +152,10 @@ void start3(void) {
        //need more?
        // get disk size
        p4ProcTable[pid % MAXPROC].pid = pid;
+       
+	   int sectorSize; 
+	   int sectorsInTrack;
+	   diskSizeReal(i, &sectorSize, &sectorsInTrack, &numTracksOnDisk[i]);  
    }
 
     // May be other stuff to do here before going on to terminal drivers
@@ -190,7 +196,8 @@ void start3(void) {
 		charInMboxID[i] = MboxCreate(0, sizeof(char));
 		charOutMboxID[i] = MboxCreate(0, sizeof(char));
 		readBufferMBox[i] = MboxCreate(10, (MAXLINE + 1) * sizeof(char));
-		
+		writeBufferMBox[i] = MboxCreate(0, MAXLINE * sizeof(char));
+		charsWrittenMBox[i] = MboxCreate(0, sizeof(int));
 		
      }
 
@@ -203,19 +210,21 @@ void start3(void) {
      */
     pid = spawnReal("start4", start4, NULL, 4 * USLOSS_MIN_STACK, 3);
     pid = waitReal(&status);
-
+	USLOSS_Console("start4 returned zapping beginng\n");
     /*
      * Zap the device drivers
      */
     zap(clockPID);  // clock driver
-    
-	  
+    USLOSS_Console("start4 after clock zap\n");
+	//disks
 	semvReal(p4ProcTable[diskPID[0] % MAXPROC].semID);
     zap(diskPID[0]);
 
     semvReal(p4ProcTable[diskPID[1] % MAXPROC].semID);
 	zap(diskPID[1]);
+	USLOSS_Console("start4 after disk zap\n");
 	
+	//terms
 	for(i = 0; i < USLOSS_TERM_UNITS; i++){
 		MboxCondSend(charInMboxID[i], 0, 0);
 		zap(termReadPID[i]);
@@ -223,7 +232,22 @@ void start3(void) {
 		MboxCondSend(charOutMboxID[i], 0, 0);
 		zap(termWritePID[i]);
 		
-		zap(termPID[i]);
+		
+		
+char killFileName[50];
+FILE *killFile;
+for(i = 0; i < USLOSS_TERM_UNITS; i++){
+sprintf(killFileName, "term%d.in", i);
+killFile = fopen(killFileName, "a");
+fprintf(killFile, "Please... Kill... Me...");
+fclose(killFile);
+zap(termPID[i]);
+}
+		
+		// MboxCondReceive(charInMboxID[i], 0, 0);
+// 		MboxCondReceive(charOutMboxID[i], 0, 0);
+// 		zap(termPID[i]);
+		USLOSS_Console("start4 after term zap\n");
 	}
 	
     // eventually, at the end:
@@ -245,10 +269,10 @@ ClockDriver(char *arg)
 	
 	
     // Infinite loop until we are zap'd
-    while(! isZapped()) {
+    while(!isZapped()) {
         result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
-        if (result != 0) {
-            return 0;
+        if (isZapped()) {
+            continue;
         }
 	/*
 	 * Compute the current time and wake up any processes
@@ -277,8 +301,6 @@ DiskDriver(char *arg)
     int unit = atoi(arg);
     int diskResult;
 
-    // --- FIXME: Query the disk size
-     
      while (!isZapped()) {
          sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
          
@@ -463,9 +485,10 @@ static int TermDriver(char *arg){
 			toSend = USLOSS_TERM_STAT_CHAR(status);
 			//USLOSS_Console("TermDriver(%d): chard %c\n", unit, toSend);
 			MboxSend(charInMboxID[unit], &toSend, sizeof(char));
-		}else{
-			USLOSS_Console("TermDriver(%d): no char\n");
-			MboxSend(charOutMboxID[unit], 0, 0);
+		}
+		if(USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY){
+			//USLOSS_Console("TermDriver(%d): dev\n", unit);
+			MboxSend(charOutMboxID[unit], NULL, 0);
 		}
 		
 
@@ -495,19 +518,7 @@ static int TermReader(char *arg){
 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
 		 	counter = 0;
 		 }
-		// if(input == '\n' || counter >= MAXLINE){
-// 			toBuild[counter++] = '\0';
-// 		 	USLOSS_Console("TermReader(%d): toBuild: %s \n", unit, toBuild);
-// 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
-// 		 	counter = 0;
-// 		}else{
-// 			toBuild[counter++] = input;
-// 		}
 		
-		// if(counter == MAXLINE || toBuild[counter] == '\n'){
-// 		 	counter = 0;
-// 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, 80);
-// 		}
 	}
 	quit(1);
 	return 0;
@@ -515,12 +526,45 @@ static int TermReader(char *arg){
 
 static int TermWriter(char *arg){
 	int unit = atoi(arg);
-    int result;
+    int numBytesRcvd;
+    int ctrl = 0;
+    char toWrite[MAXLINE];
 	while(!isZapped()){
-		result = MboxReceive(charOutMboxID[unit], 0, 0);
+		numBytesRcvd = MboxReceive(writeBufferMBox[unit], toWrite, MAXLINE);
 		if (isZapped()){
 			continue;	
 		}
+		//DO xmit rcv interruptes
+		ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
+		ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
+		if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
+			USLOSS_Console("USLOSS_DEV_INVALID xmit/ rcvd ints unit %d",unit);	
+		}
+		
+		for(int i = 0; i < numBytesRcvd; i++){
+			ctrl = 0;
+			ctrl = USLOSS_TERM_CTRL_CHAR(ctrl, toWrite[i]);
+			ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
+			ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
+			ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
+			
+			//send char DO
+			if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
+				USLOSS_Console("USLOSS_DEV_INVALID xmit error unit %d",unit);	
+			}
+			
+			//wait on charOutMboxID
+			MboxReceive(charOutMboxID[unit],0,0);
+		}
+		
+		//DO turn OFF xmit turn ON rcv interr
+		ctrl = 0;
+		ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
+		if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
+			USLOSS_Console("USLOSS_DEV_INVALID xmit OFF error unit %d",unit);	
+		}
+		
+		MboxSend(charsWrittenMBox[unit], (void *)numBytesRcvd, sizeof(int));
 	}
 	
 	quit(0);
@@ -854,6 +898,11 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
         return -1;
     }
     
+    if (numTracksOnDisk[unit] != -1){
+    	*tracksInDisk = numTracksOnDisk[unit];
+    	return 0;
+    }
+    
     addProcessToProcTable();
 
     // Build deviceRequest
@@ -865,11 +914,12 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
     if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
         USLOSS_Console("ERROR: diskSizeReal(): DeviceOutput failed");
     }
-    
+    USLOSS_Console("ERROR: bef\n");
     int status;
     if (waitDevice(USLOSS_DISK_DEV, unit, &status) != 0) {
         return -1;
     }
+    USLOSS_Console("ERROR: aff\n");
     if (status == USLOSS_DEV_ERROR) {
         return -1;
     }
@@ -934,7 +984,19 @@ int termReadReal(int unit, int size, char *buffer){
 }
 
 void termWrite(USLOSS_Sysargs *args){
-
+	char *text = (char *)args->arg1;
+	int size = (int)(long)args->arg2;
+	int unit = (int)(long)args->arg3;
+	
+	int resultCharsWritten;
+	resultCharsWritten = termWriteReal(unit, size, text);
+	
+	if(resultCharsWritten < 0 ){
+		args->arg4 = (void *)(long)-1;
+	}else{
+		args->arg4 = (void *)(long)0;
+	}
+	args->arg2 = (void *)(long)resultCharsWritten;
 }
 
 // This routine writes size characters — a line of text pointed to by text to the terminal 
@@ -945,7 +1007,17 @@ void termWrite(USLOSS_Sysargs *args){
 // 			-1: invalid parameters
 // 			>0: number of characters written
 int termWriteReal(int unit, int size, char *text){
-	return 0;
+	if (unit < 0 || unit > USLOSS_TERM_UNITS) return -1;
+	
+	if(size < 1 || size > MAXLINE){
+		return -1;
+	}
+	
+	MboxSend(writeBufferMBox[unit], text, size);
+	int charsWritten;
+	MboxReceive(charsWrittenMBox[unit], &charsWritten, sizeof(int));
+	
+	return charsWritten;
 }
 
 /* ------------------------------------------------------------------------
