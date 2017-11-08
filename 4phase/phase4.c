@@ -67,6 +67,8 @@ void nullifyProcessEntry(void);
 
 void setUserMode(void);
 
+int termReadReal(int, int, char *);
+
 
 /* --------- Functions ----------- */
 void start3(void) {
@@ -75,8 +77,8 @@ void start3(void) {
 	char    termbuf[10];
     int		i;
     int		clockPID;
-    int 	diskPID0;
-    int 	diskPID1;
+    // int 	diskPID0;
+//     int 	diskPID1;
     int		pid;
     int		status;
     
@@ -187,7 +189,7 @@ void start3(void) {
      	
 		charInMboxID[i] = MboxCreate(0, sizeof(char));
 		charOutMboxID[i] = MboxCreate(0, sizeof(char));
-		readBufferMBox[i] = MboxCreate(10, 80 * sizeof(char));
+		readBufferMBox[i] = MboxCreate(10, (MAXLINE + 1) * sizeof(char));
 		
 		
      }
@@ -214,23 +216,15 @@ void start3(void) {
     semvReal(p4ProcTable[diskPID[1] % MAXPROC].semID);
 	zap(diskPID[1]);
 	
-	USLOSS_Console("start4 zapping!\n");
-	
-	zap(termReadPID[0]);
-	//zap(termWritePID[0]);
-	zap(termPID[0]);
-	
-	zap(termReadPID[1]);
-	//zap(termWritePID[1]);
-	zap(termPID[1]);
-	
-	zap(termReadPID[2]);
-	//zap(termWritePID[2]);
-	zap(termPID[2]);
-	
-	zap(termReadPID[3]);
-	//zap(termWritePID[3]);
-	zap(termPID[3]);
+	for(i = 0; i < USLOSS_TERM_UNITS; i++){
+		MboxCondSend(charInMboxID[i], 0, 0);
+		zap(termReadPID[i]);
+		
+		MboxCondSend(charOutMboxID[i], 0, 0);
+		zap(termWritePID[i]);
+		
+		zap(termPID[i]);
+	}
 	
     // eventually, at the end:
     quit(0);
@@ -309,6 +303,7 @@ DiskDriver(char *arg)
          }
      }
      quit(0);
+     return 0;
  }
 
 
@@ -443,89 +438,38 @@ int diskWriteHandler(int unit) {
     semvReal(currReq->semID);
     return 0;
 }
-/*
- *  These are the status codes returned by USLOSS_DeviceInput(). In general, 
- *  the status code is in the lower byte of the int returned; the upper
- *  bytes may contain other info. See the documentation for the
- *  specific device for details.
- */
-// #define USLOSS_DEV_READY	0
-// #define USLOSS_DEV_BUSY		1
-// #define USLOSS_DEV_ERROR	2
-
-/* 
- * USLOSS_DeviceOutput() and USLOSS_DeviceInput() will return DEV_OK if their 
- * arguments were valid and the device is ready, DEV_BUSY if the arguments were valid
- * but the device is busy, and DEV_INVALID otherwise. By valid, the device 
- * type and unit must correspond to a device that exists. 
- */
-
-// #define USLOSS_DEV_OK		USLOSS_DEV_READY
-// #define USLOSS_DEV_INVALID	USLOSS_DEV_ERROR
-
-/*
- * These are the fields of the terminal status registers. A call to
- * USLOSS_DeviceInput will return the status register, and you can use these
- * macros to extract the fields. The xmit and recv fields contain the
- * status codes listed above.
- */
-
-// #define USLOSS_TERM_STAT_CHAR(status)\
-// 	(((status) >> 8) & 0xff)	/* character received, if any */
-
-// #define	USLOSS_TERM_STAT_XMIT(status)\
-// 	(((status) >> 2) & 0x3) 	/* xmit status for unit */
-
-// #define	USLOSS_TERM_STAT_RECV(status)\
-// 	((status) & 0x3)		/* recv status for unit */
-
-/*
- * These are the fields of the terminal control registers. You can use
- * these macros to put together a control word to write to the
- * control registers via USLOSS_DeviceOutput.
- */
-
-// #define USLOSS_TERM_CTRL_CHAR(ctrl, ch)\
-// 	((ctrl) | (((ch) & 0xff) << 8))/* char to send, if any */
-// 
-// #define	USLOSS_TERM_CTRL_XMIT_INT(ctrl)\
-// 	((ctrl) | 0x4)			/* enable xmit interrupts */
-// 
-// #define	USLOSS_TERM_CTRL_RECV_INT(ctrl)\
-// 	((ctrl) | 0x2)			/* enable recv interrupts */
-// 
-// #define USLOSS_TERM_CTRL_XMIT_CHAR(ctrl)\
-// 	((ctrl) | 0x1)			/* xmit the char in the upper bits */
 
 static int TermDriver(char *arg){
 	int unit = atoi(arg);
 	int ctrl = 0;
+	char toSend;
 	ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
-	if ( USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)ctrl)  ==  USLOSS_DEV_INVALID){
+	if ( USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl)  ==  USLOSS_DEV_INVALID){
 		USLOSS_Console("termDriver(%d):  returned an error setting rcv int\n");
-		//quit(1); // return;?
+		//quit(1); // return;
 	} 
 	
 	int result, status;
 	while(!isZapped()){
 		result = waitDevice(USLOSS_TERM_DEV,unit,&status);
 		
-		if (result != 0){
-			USLOSS_Console("TermDriver(%d): result %d . Returning\n", unit, result);
+		if (isZapped()){
+			//USLOSS_Console("TermDriver(%d): zapped %d . continue-ing\n", unit, result);
 			continue;
 			//return 1;
 		}
 		
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
-			char toSend = USLOSS_TERM_STAT_CHAR(status);
-			USLOSS_Console("TermDriver(%d): %c\n", unit, toSend);
+			toSend = USLOSS_TERM_STAT_CHAR(status);
+			//USLOSS_Console("TermDriver(%d): chard %c\n", unit, toSend);
 			MboxSend(charInMboxID[unit], &toSend, sizeof(char));
+		}else{
+			USLOSS_Console("TermDriver(%d): no char\n");
+			MboxSend(charOutMboxID[unit], 0, 0);
 		}
-// 		 
 		
 
 	}
-	USLOSS_Console("TermDriver%d\n", unit);
 	quit(0);
 	return 0;
 }
@@ -533,30 +477,36 @@ static int TermDriver(char *arg){
 static int TermReader(char *arg){
 	int unit = atoi(arg);
 	
-	char toBuild[80];
+	char toBuild[MAXLINE + 1];
 	char input;
 	int counter = 0;
-	int result;
 	while(!isZapped()){
-		result = MboxReceive(charInMboxID[unit], &input, sizeof(char));
-		if(result == -1){
-			USLOSS_Console("TermReader(%d): returning\n", unit);
-			return 0;
+		MboxReceive(charInMboxID[unit], &input, sizeof(char));
+		if(isZapped()){
+			continue;
 		} 
-		USLOSS_Console("TermReader(%d): rcv'd %c\n", unit, input);
-
-		if(input == '\n' || counter == MAXLINE - 1){
-			toBuild[counter++] = '\0';
-		 	USLOSS_Console("TermReader(%d): toBuild: %s \n", unit, toBuild);
+		
+		//USLOSS_Console("TermReader(%d): rcv'd %c\n", unit, input);
+		toBuild[counter++] = input;
+		
+		if(input == '\n' || counter == MAXLINE){
+			toBuild[counter] = '\0';
+		 	//USLOSS_Console("TermReader(%d): toBuild: |%s| \n", unit, toBuild);
 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
 		 	counter = 0;
-		}else{
-			toBuild[counter++] = input;
-		}
-		// toBuild[counter++] = input;
-// 		if(counter == MAXLINE || toBuild[counter] == '\n'){
+		 }
+		// if(input == '\n' || counter >= MAXLINE){
+// 			toBuild[counter++] = '\0';
+// 		 	USLOSS_Console("TermReader(%d): toBuild: %s \n", unit, toBuild);
+// 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
 // 		 	counter = 0;
-// 		 	MBoxCondSend(readBufferMBox[unit], (void *)toBuild, 80);
+// 		}else{
+// 			toBuild[counter++] = input;
+// 		}
+		
+		// if(counter == MAXLINE || toBuild[counter] == '\n'){
+// 		 	counter = 0;
+// 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, 80);
 // 		}
 	}
 	quit(1);
@@ -564,11 +514,15 @@ static int TermReader(char *arg){
 }
 
 static int TermWriter(char *arg){
-	// int unit = atoi(arg);
-// 	int result, status;
-// 	while(!isZapped()){
-// 		//result = waitDevice(USLOSS_TERM_DEV,unit,&status);
-// 	}
+	int unit = atoi(arg);
+    int result;
+	while(!isZapped()){
+		result = MboxReceive(charOutMboxID[unit], 0, 0);
+		if (isZapped()){
+			continue;	
+		}
+	}
+	
 	quit(0);
 	return 1;
 }
@@ -929,7 +883,7 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
 }
 
 void termRead(USLOSS_Sysargs *args){
-	char *buffer = args->arg2;
+	char *buffer = (char *)args->arg1;
 	int size = (int)(long)args->arg2;
 	int unit = (int)(long)args->arg3;
 	
@@ -952,20 +906,31 @@ void termRead(USLOSS_Sysargs *args){
 // 			>0: number of characters read
 int termReadReal(int unit, int size, char *buffer){
 	if (unit < 0 || unit > 3) return -1;
-	if (size < 0) return -1;
+	if (size <= 0) return -1;
 	
 	int result;
-	int stat = 6;
 	
-	char linebuf[MAXLINE];
+	char linebuf[MAXLINE + 1];
 	result = MboxReceive(readBufferMBox[unit], linebuf, MAXLINE);
 	if(result < 0){
 		USLOSS_Console("termReadReal() received %d. Returning...\n", result);
 		return result;
 	}
-	strncpy(buffer, linebuf, size);
-	return result;
+	//USLOSS_Console("termReadReal() received %s\n", linebuf);
+	int linelength = strlen(linebuf);
+	linebuf[linelength] = '\n';
 	
+	if (linelength > size){
+		memcpy(buffer, linebuf, linelength + 1);
+		return size;
+	}else{
+		memcpy(buffer, linebuf, linelength);
+		return linelength;
+	}
+	
+	
+	
+	return linelength;
 }
 
 void termWrite(USLOSS_Sysargs *args){
