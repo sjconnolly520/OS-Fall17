@@ -509,7 +509,7 @@ static int TermReader(char *arg){
 		if(input == '\n' || counter == MAXLINE){
 			toBuild[counter] = '\0';
 		 	//USLOSS_Console("TermReader(%d): toBuild: |%s| \n", unit, toBuild);
-		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter);
+		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter + 1);
 		 	counter = 0;
 		 }
 		
@@ -884,7 +884,9 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
         return -1;
     }
     
-    if (numTracksOnDisk[unit] != -1){
+    if (numTracksOnDisk[unit] != NULL){
+    	*sectorSize = USLOSS_DISK_SECTOR_SIZE;
+    	*sectorsInTrack = USLOSS_DISK_TRACK_SIZE;
     	*tracksInDisk = numTracksOnDisk[unit];
     	return 0;
     }
@@ -900,12 +902,10 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
     if (USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &devReq) == USLOSS_DEV_INVALID) {
         USLOSS_Console("ERROR: diskSizeReal(): DeviceOutput failed");
     }
-    USLOSS_Console("ERROR: bef\n");
     int status;
     if (waitDevice(USLOSS_DISK_DEV, unit, &status) != 0) {
         return -1;
     }
-    USLOSS_Console("ERROR: aff\n");
     if (status == USLOSS_DEV_ERROR) {
         return -1;
     }
@@ -947,13 +947,14 @@ int termReadReal(int unit, int size, char *buffer){
 	int result;
 	
 	char linebuf[MAXLINE + 1];
-	result = MboxReceive(readBufferMBox[unit], linebuf, MAXLINE);
+	result = MboxReceive(readBufferMBox[unit], linebuf, MAXLINE + 1);
 	if(result < 0){
 		USLOSS_Console("termReadReal() received %d. Returning...\n", result);
 		return result;
 	}
 	//USLOSS_Console("termReadReal() received %s\n", linebuf);
 	int linelength = strlen(linebuf);
+// 	USLOSS_Console("trR %d  str: |%s|  of len: %d\n", unit, linebuf, linelength);
 	linebuf[linelength] = '\n';
 	
 	if (linelength > size){
