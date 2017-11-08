@@ -70,6 +70,7 @@ void nullifyProcessEntry(void);
 void setUserMode(void);
 
 int termReadReal(int, int, char *);
+termWriteReal(int, int, char*);
 
 
 /* --------- Functions ----------- */
@@ -210,19 +211,19 @@ void start3(void) {
      */
     pid = spawnReal("start4", start4, NULL, 4 * USLOSS_MIN_STACK, 3);
     pid = waitReal(&status);
-	USLOSS_Console("start4 returned zapping beginng\n");
+
     /*
      * Zap the device drivers
      */
     zap(clockPID);  // clock driver
-    USLOSS_Console("start4 after clock zap\n");
+
 	//disks
 	semvReal(p4ProcTable[diskPID[0] % MAXPROC].semID);
     zap(diskPID[0]);
 
     semvReal(p4ProcTable[diskPID[1] % MAXPROC].semID);
 	zap(diskPID[1]);
-	USLOSS_Console("start4 after disk zap\n");
+
 	
 	//terms
 	for(i = 0; i < USLOSS_TERM_UNITS; i++){
@@ -230,26 +231,19 @@ void start3(void) {
 		zap(termReadPID[i]);
 		
 		MboxCondSend(charOutMboxID[i], 0, 0);
+		MboxCondSend(writeBufferMBox[i], "kill", 5);
 		zap(termWritePID[i]);
 		
-		
-		
-char killFileName[50];
-FILE *killFile;
-for(i = 0; i < USLOSS_TERM_UNITS; i++){
-sprintf(killFileName, "term%d.in", i);
-killFile = fopen(killFileName, "a");
-fprintf(killFile, "Please... Kill... Me...");
-fclose(killFile);
-zap(termPID[i]);
-}
-		
-		// MboxCondReceive(charInMboxID[i], 0, 0);
-// 		MboxCondReceive(charOutMboxID[i], 0, 0);
-// 		zap(termPID[i]);
-		USLOSS_Console("start4 after term zap\n");
 	}
-	
+	char killFileName[50];
+	FILE *killFile;
+	for(i = 0; i < USLOSS_TERM_UNITS; i++){
+		sprintf(killFileName, "term%d.in", i);
+		killFile = fopen(killFileName, "a");
+		fprintf(killFile, "Please... Kill... Me...");
+		fclose(killFile);
+		zap(termPID[i]);
+	}
     // eventually, at the end:
     quit(0);
     
@@ -484,11 +478,11 @@ static int TermDriver(char *arg){
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
 			toSend = USLOSS_TERM_STAT_CHAR(status);
 			//USLOSS_Console("TermDriver(%d): chard %c\n", unit, toSend);
-			MboxSend(charInMboxID[unit], &toSend, sizeof(char));
+			MboxCondSend(charInMboxID[unit], &toSend, sizeof(char));
 		}
 		if(USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY){
 			//USLOSS_Console("TermDriver(%d): dev\n", unit);
-			MboxSend(charOutMboxID[unit], NULL, 0);
+			MboxCondSend(charOutMboxID[unit], NULL, 0);
 		}
 		
 
@@ -534,13 +528,7 @@ static int TermWriter(char *arg){
 		if (isZapped()){
 			continue;	
 		}
-		//DO xmit rcv interruptes
-		ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
-		ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
-		if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
-			USLOSS_Console("USLOSS_DEV_INVALID xmit/ rcvd ints unit %d",unit);	
-		}
-		
+
 		for(int i = 0; i < numBytesRcvd; i++){
 			ctrl = 0;
 			ctrl = USLOSS_TERM_CTRL_CHAR(ctrl, toWrite[i]);
@@ -556,15 +544,13 @@ static int TermWriter(char *arg){
 			//wait on charOutMboxID
 			MboxReceive(charOutMboxID[unit],0,0);
 		}
-		
 		//DO turn OFF xmit turn ON rcv interr
 		ctrl = 0;
 		ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
 		if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
 			USLOSS_Console("USLOSS_DEV_INVALID xmit OFF error unit %d",unit);	
 		}
-		
-		MboxSend(charsWrittenMBox[unit], (void *)numBytesRcvd, sizeof(int));
+		MboxSend(charsWrittenMBox[unit], &numBytesRcvd, sizeof(int));
 	}
 	
 	quit(0);
@@ -1016,7 +1002,6 @@ int termWriteReal(int unit, int size, char *text){
 	MboxSend(writeBufferMBox[unit], text, size);
 	int charsWritten;
 	MboxReceive(charsWrittenMBox[unit], &charsWritten, sizeof(int));
-	
 	return charsWritten;
 }
 
