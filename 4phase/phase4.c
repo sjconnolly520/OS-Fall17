@@ -209,22 +209,30 @@ void start3(void) {
      */
     zap(clockPID);  // clock driver
     
-	  
 	semvReal(p4ProcTable[diskPID[0] % MAXPROC].semID);
     zap(diskPID[0]);
 
     semvReal(p4ProcTable[diskPID[1] % MAXPROC].semID);
 	zap(diskPID[1]);
-	
+    
 	for(i = 0; i < USLOSS_TERM_UNITS; i++){
 		MboxCondSend(charInMboxID[i], 0, 0);
 		zap(termReadPID[i]);
 		
 		MboxCondSend(charOutMboxID[i], 0, 0);
 		zap(termWritePID[i]);
-		
-		zap(termPID[i]);
 	}
+    
+    char killFileName[50];
+    FILE * killFile;
+    for(i = 0; i < USLOSS_TERM_UNITS; i++){
+        sprintf(killFileName, "term%d.in", i);
+        killFile = fopen(killFileName, "a");
+        fprintf(killFile, "Please... Kill... Me...");
+        fclose(killFile);
+        
+        zap(termPID[i]);
+    }
 	
     // eventually, at the end:
     quit(0);
@@ -247,7 +255,8 @@ ClockDriver(char *arg)
     // Infinite loop until we are zap'd
     while(! isZapped()) {
         result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
-        if (result != 0) {
+        if (isZapped()) {
+            quit(1);
             return 0;
         }
 	/*
@@ -266,7 +275,6 @@ ClockDriver(char *arg)
 	 		semvReal(sleepSemID);
 	 	}
     }
-    
     quit(1);
     return 0;
 }
@@ -444,6 +452,7 @@ static int TermDriver(char *arg){
 	int ctrl = 0;
 	char toSend;
 	ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
+    
 	if ( USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl)  ==  USLOSS_DEV_INVALID){
 		USLOSS_Console("termDriver(%d):  returned an error setting rcv int\n");
 		//quit(1); // return;
@@ -462,10 +471,10 @@ static int TermDriver(char *arg){
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
 			toSend = USLOSS_TERM_STAT_CHAR(status);
 			//USLOSS_Console("TermDriver(%d): chard %c\n", unit, toSend);
-			MboxSend(charInMboxID[unit], &toSend, sizeof(char));
+			MboxCondSend(charInMboxID[unit], &toSend, sizeof(char));
 		}else{
 			USLOSS_Console("TermDriver(%d): no char\n");
-			MboxSend(charOutMboxID[unit], 0, 0);
+			MboxCondSend(charOutMboxID[unit], 0, 0);
 		}
 		
 
