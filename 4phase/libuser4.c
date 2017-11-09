@@ -12,37 +12,33 @@
     }  \
 }
 
-// Sleep (syscall SYS_SLEEP)
-//  Input: arg1: number of seconds to delay the process
-// Output: arg4: -1 if illegal values are given as input; 0 otherwise.
+/*
+ * User level call to create a sleep request
+ */
 int Sleep(int seconds){
+    
 	CHECKMODE;
 	
+    // Build a Sysargs
 	USLOSS_Sysargs args;
 	args.number = SYS_SLEEP;
 	args.arg1 = (void *)(long)seconds;
 	
+    // Perform system call
 	USLOSS_Syscall(&args);
 	
+    // Return results to user
 	return (int)(long)args.arg4;
 }
 
-// DiskRead (syscall SYS_DISKREAD)
-// Input
-// 		arg1: the memory address to which to transfer
-//      arg2: number of sectors to read
-// 		arg3: the starting disk track number
-// 		arg4: the starting disk sector number
-// 		arg5: the unit number of the disk from which to read
-//
-// Output
-// 		arg1: 0 if transfer was successful; the disk status register otherwise. 
-// 		arg4: -1 if illegal values are given as input; 0 otherwise.
-int DiskRead(void *diskBuffer, int unit, int track, int first, 
-                       int sectors, int *status){
+/*
+ * User level call to create a disk read request
+ */
+int DiskRead(void *diskBuffer, int unit, int track, int first, int sectors, int *status){
     
     CHECKMODE;
     
+    // Build a Sysargs
     USLOSS_Sysargs args;
     args.number = SYS_DISKREAD;
     args.arg1 = (void *)diskBuffer;
@@ -51,16 +47,22 @@ int DiskRead(void *diskBuffer, int unit, int track, int first,
     args.arg4 = (void *)(long)first;
     args.arg5 = (void *)(long)unit;
     
+    // Perform system call
     USLOSS_Syscall(&args);
     
+    // Return results to user
     *status = (int)(long)args.arg1;
     return (int)(long)args.arg4;
 }
 
-int DiskWrite(void *diskBuffer, int unit, int track, int first,
-                       int sectors, int *status){
+/*
+ * User level call to create a disk write request
+ */
+int DiskWrite(void *diskBuffer, int unit, int track, int first, int sectors, int *status){
+    
     CHECKMODE;
     
+    // Build a Sysargs
     USLOSS_Sysargs args;
     args.number = SYS_DISKWRITE;
     args.arg1 = (void *)diskBuffer;
@@ -69,29 +71,30 @@ int DiskWrite(void *diskBuffer, int unit, int track, int first,
     args.arg4 = (void *)(long)first;
     args.arg5 = (void *)(long)unit;
     
+    // Perform system call
     USLOSS_Syscall(&args);
     
+    // Return results to user
     *status = (int)(long)args.arg1;
     return (int)(long)args.arg4;
 }
 
-// DiskSize (syscall SYS_DISKSIZE)
-// Returns information about the size of the disk (diskSize). 
-// Input
-// 		arg1: the unit number of the disk
-// Output
-// 		arg1: size of a sector, in bytes
-//		arg2: number of sectors in a track
-//      arg3: number of tracks in the disk
-//      arg4: -1 if illegal values are given as input; 0 otherwise.
+/*
+ * User level call to create a disk size request
+ */
 int DiskSize (int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk){
+    
 	CHECKMODE
 	
+    // Build a Sysargs
 	USLOSS_Sysargs args;
 	args.number = SYS_DISKSIZE;
 	args.arg1 = (void *)(long)unit;
+    
+    // Perform system call
 	USLOSS_Syscall(&args);
-
+    
+    // Return results to user
 	*sectorSize 	= (int)(long)args.arg1;
 	*sectorsInTrack = (int)(long)args.arg2;
 	*tracksInDisk 	= (int)(long)args.arg3; 
@@ -99,30 +102,46 @@ int DiskSize (int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk)
 	return (int)(long)args.arg4;
 }
 
+/*
+ * User level call to create a terminal read request
+ */
 int TermRead (char *buffer, int bufferSize, int unitID, int *numCharsRead){
+    
 	CHECKMODE
 	
+    // Build a Sysargs
 	USLOSS_Sysargs args;
 	args.number = SYS_TERMREAD;
 	args.arg1 = (void *)buffer;
 	args.arg2 = (void *)(long)bufferSize;
 	args.arg3 = (void *)(long)unitID;
+    
+    // Perform system call
 	USLOSS_Syscall(&args);
 
+    // Return results to user
 	*numCharsRead 	= (int)(long)args.arg2;
 	return (int)(long)args.arg4;
 }
 
-int TermWrite(char *buffer, int bufferSize, int unitID, int *numCharsRead){
+/*
+ * User level call to create a terminal write request
+ */
+int TermWrite(char *buffer, int bufferSize, int unitID, int *numCharsWritten){
+    
 	CHECKMODE
 	
+    // Build a Sysargs
 	USLOSS_Sysargs args;
 	args.number = SYS_TERMWRITE;
 	args.arg1 = (void *)buffer;
 	args.arg2 = (void *)(long)bufferSize;
 	args.arg3 = (void *)(long)unitID;
+    
+    // Perform system call
 	USLOSS_Syscall(&args);
 
-	*numCharsRead 	= (int)(long)args.arg2;
+    // Return results to user
+	*numCharsWritten = (int)(long)args.arg2;
 	return (int)(long)args.arg4;
 }

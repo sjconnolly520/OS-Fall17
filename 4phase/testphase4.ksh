@@ -1,6 +1,5 @@
 #!/bin/ksh
-#dir=/home/cs452/fall17/phase4/testResults
-#dir=/home/cs452/fall17/admin/project/phase4/testResults
+#dir=/home/cs452/fall15/phase4/testResults
 #dir=/Users/patrick/Classes/452/project/phase4/testResults
 #dir=~/452/OS-Fall17/4phase/testResults
 dir=~/include/OS/OS-Fall17/4phase/testResults
@@ -37,7 +36,13 @@ then
 
     /bin/rm test${num}stderr.txt
 
-    if [ "${num}" -eq 05 -o "${num}" -eq 06 ]; then
+    if [ "${num}" -eq 06 -o \
+         "${num}" -eq 07 -o \
+         "${num}" -eq 19 -o \
+         "${num}" -eq 20 -o \
+         "${num}" -eq 21 -o \
+         "${num}" -eq 22 -o \
+         "${num}" -eq 23 ]; then
         echo >> test${num}.txt
         echo "term0.out" >> test${num}.txt
         cat   term0.out >> test${num}.txt
