@@ -10,7 +10,8 @@
 #include <stdlib.h> /* needed for atoi() */
 #include <stdio.h>
 #include <string.h>
-//sems for the drivers etc
+
+/* ------sems for the drivers etc ---- */
 int 	running;
 
 /* ----------- Globals ------------- */
@@ -32,17 +33,12 @@ int readBufferMBox[USLOSS_TERM_UNITS];
 int writeBufferMBox[USLOSS_TERM_UNITS];
 int charsWrittenMBox[USLOSS_TERM_UNITS];
 
-
-
-
-
 /*-------------Drivers-------------- */
 static int	ClockDriver(char *);
 static int	DiskDriver(char *);
 static int	TermDriver(char *);
 int diskReadHandler(int);
 int diskWriteHandler(int);
-//TODO is this right proto?
 static int TermReader(char *);
 static int TermWriter(char *);
 
@@ -70,20 +66,29 @@ void nullifyProcessEntry(void);
 void setUserMode(void);
 
 int termReadReal(int, int, char *);
-termWriteReal(int, int, char*);
+int termWriteReal(int, int, char*);
 
 
-/* --------- Functions ----------- */
+/* --------- Functions --------------*/
+/* ------------------------------------------------------------------------
+ Name - start3
+ Purpose     - Initialized all of the required global variables for a function run.
+             - Spawns a process called 'start4'
+ Parameters  - void : may be usless, I'm not certain
+ Returns     - 0 - This indicates something went wrong.
+             - nothing - quit has been called successfully
+ Side Effects - ProcTable is initialized, SemTable is initialized, sysCallVec is initialized
+ ----------------------------------------------------------------------- */
 void start3(void) {
     char	name[128];
     char    buf[10];
 	char    termbuf[10];
     int		i;
     int		clockPID;
-    // int 	diskPID0;
-//     int 	diskPID1;
     int		pid;
     int		status;
+    numTracksOnDisk[0] = -1;
+    numTracksOnDisk[1] = -1;
     
     // Check kernel mode here.
     if (!(USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)) {
@@ -249,10 +254,16 @@ void start3(void) {
     
 }
 
+/* ------------------------------------------------------------------------
+ Name - ClockDriver
+ Purpose     - used by Sleep user mode process.
+ Parameters  - char *arg - parameters from start3. Does nothing here
+ Returns     - nothing
+ Side Effects - Sets PSR to User Mode
+ ----------------------------------------------------------------------- */
 static int
 ClockDriver(char *arg)
 {
-    int result;
     int status;
 
     // Let the parent know we are running and enable interrupts.
@@ -264,7 +275,7 @@ ClockDriver(char *arg)
 	
     // Infinite loop until we are zap'd
     while(!isZapped()) {
-        result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
+        waitDevice(USLOSS_CLOCK_DEV, 0, &status);
         if (isZapped()) {
             continue;
         }
@@ -280,7 +291,6 @@ ClockDriver(char *arg)
 	 	while(SleepList != NULL && SleepList->wakeTime <= status){
 	 		int sleepSemID = SleepList->semID;
 	 		SleepList = SleepList->nextSleeping;
-	 		//TODO check return here?
 	 		semvReal(sleepSemID);
 	 	}
     }
@@ -289,11 +299,17 @@ ClockDriver(char *arg)
     return 0;
 }
 
+/* ------------------------------------------------------------------------
+ Name - DiskDriver
+ Purpose      - used by DiskWrite and DiskRead user mode processes.
+ Parameters   - char *arg - parameters from start3. indicates the unit# of the disk
+ Returns      - nothing
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 static int
 DiskDriver(char *arg)
 {
     int unit = atoi(arg);
-    int diskResult;
 
      while (!isZapped()) {
          sempReal(p4ProcTable[diskPID[unit] % MAXPROC].semID);
@@ -302,15 +318,11 @@ DiskDriver(char *arg)
          
          switch (diskRequestList[unit]->requestType) {
              case USLOSS_DISK_READ:
-//                 USLOSS_Console("DDr\n");
-                 diskResult = diskReadHandler(unit);
-//                 USLOSS_Console("Result from READING = %d\n", diskResult);
+                 diskReadHandler(unit);
                  break;
                  
              case USLOSS_DISK_WRITE:
-//                 USLOSS_Console("DDw\n");
-                 diskResult = diskWriteHandler(unit);
-//                 USLOSS_Console("Result from WRITING = %d\n", diskResult);
+                 diskWriteHandler(unit);
                  break;
                  
              default:
@@ -322,7 +334,13 @@ DiskDriver(char *arg)
      return 0;
  }
 
-
+/* ------------------------------------------------------------------------
+ Name - diskReadHandler
+ Purpose      - Processes disk read requests from the user mode DiskRead
+ Parameters   - int unit.  indicates the unit# of the disk
+ Returns      - 0, -1 to indicate an error occurred
+ Side Effects - modifies the diskRequestList
+ ----------------------------------------------------------------------- */
 int diskReadHandler(int unit) {
 
     int status;
@@ -389,6 +407,13 @@ int diskReadHandler(int unit) {
     return 0;
 }
 
+/* ------------------------------------------------------------------------
+ Name - diskWriteHandler
+ Purpose      - Processes disk write requests from the user mode DiskWrite
+ Parameters   - int unit.  indicates the unit# of the disk
+ Returns      - 0, -1 to indicate an error occurred
+ Side Effects - modifies the diskRequestList
+ ----------------------------------------------------------------------- */
 int diskWriteHandler(int unit) {
 
     int status;
@@ -455,42 +480,56 @@ int diskWriteHandler(int unit) {
     return 0;
 }
 
+/* ------------------------------------------------------------------------
+ Name - TermDriver
+ Purpose      - Processes terminal read and write requests requests from the user mode 
+ 				TermRead and TermWrite
+ Parameters   - char *arg.  indicates the unit# of this terminal driver 
+ Returns      - 0
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 static int TermDriver(char *arg){
 	int unit = atoi(arg);
+	
 	int ctrl = 0;
-	char toSend;
 	ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
 	if ( USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl)  ==  USLOSS_DEV_INVALID){
-		USLOSS_Console("termDriver(%d):  returned an error setting rcv int\n");
-		//quit(1); // return;
+		USLOSS_Console("termDriver(%d):  returned an error setting rcv int. Halting\n");
+		USLOSS_Halt(1); 
 	} 
 	
-	int result, status;
+	char toSend;
+	int status;
 	while(!isZapped()){
-		result = waitDevice(USLOSS_TERM_DEV,unit,&status);
+		waitDevice(USLOSS_TERM_DEV,unit,&status);
 		
 		if (isZapped()){
-			//USLOSS_Console("TermDriver(%d): zapped %d . continue-ing\n", unit, result);
 			continue;
-			//return 1;
 		}
 		
 		if (USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
 			toSend = USLOSS_TERM_STAT_CHAR(status);
-			//USLOSS_Console("TermDriver(%d): chard %c\n", unit, toSend);
 			MboxCondSend(charInMboxID[unit], &toSend, sizeof(char));
 		}
 		if(USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY){
-			//USLOSS_Console("TermDriver(%d): dev\n", unit);
 			MboxCondSend(charOutMboxID[unit], NULL, 0);
 		}
 		
 
 	}
+	
 	quit(0);
 	return 0;
 }
 
+/* ------------------------------------------------------------------------
+ Name - TermReader
+ Purpose      - Processes terminal read requests from the user mode TermRead
+ Parameters   - char *arg.  indicates the unit# of the terminal driver this is 
+ 				associated with
+ Returns      - 0
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 static int TermReader(char *arg){
 	int unit = atoi(arg);
 	
@@ -503,12 +542,10 @@ static int TermReader(char *arg){
 			continue;
 		} 
 		
-		//USLOSS_Console("TermReader(%d): rcv'd %c\n", unit, input);
 		toBuild[counter++] = input;
 		
 		if(input == '\n' || counter == MAXLINE){
 			toBuild[counter] = '\0';
-		 	//USLOSS_Console("TermReader(%d): toBuild: |%s| \n", unit, toBuild);
 		 	MboxCondSend(readBufferMBox[unit], (void *)toBuild, counter + 1);
 		 	counter = 0;
 		 }
@@ -518,6 +555,14 @@ static int TermReader(char *arg){
 	return 0;
 }
 
+/* ------------------------------------------------------------------------
+ Name - TermWriter
+ Purpose      - Processes terminal write requests from the user mode TermWrite
+ Parameters   - char *arg.  indicates the unit# of the terminal driver this driver is
+ 				associated with
+ Returns      - 0
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 static int TermWriter(char *arg){
 	int unit = atoi(arg);
     int numBytesRcvd;
@@ -536,15 +581,12 @@ static int TermWriter(char *arg){
 			ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
 			ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
 			
-			//send char DO
 			if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
 				USLOSS_Console("USLOSS_DEV_INVALID xmit error unit %d",unit);	
 			}
 			
-			//wait on charOutMboxID
 			MboxReceive(charOutMboxID[unit],0,0);
 		}
-		//DO turn OFF xmit turn ON rcv interr
 		ctrl = 0;
 		ctrl = USLOSS_TERM_CTRL_RECV_INT(ctrl);
 		if(USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)(long)ctrl) == USLOSS_DEV_INVALID){
@@ -554,12 +596,19 @@ static int TermWriter(char *arg){
 	}
 	
 	quit(0);
-	return 1;
+	return 0;
 }
 
 
 /*----------- USER AND KERNEL level functions ---------------- */
 
+/* ------------------------------------------------------------------------
+ Name - sleep1
+ Purpose      - helper function for sleepReal and Sleep user mode process. Error checking for SYS_SLEEP
+ Parameters   - USLOSS_Sysargs *args
+ Returns      - void
+ Side Effects - none
+ ----------------------------------------------------------------------- */
 void sleep1(USLOSS_Sysargs *args){
 	if (args->number != SYS_SLEEP){
 		terminateReal(1);
@@ -568,11 +617,14 @@ void sleep1(USLOSS_Sysargs *args){
 	args->arg4 = (void *)(long)sleepReal((int)(long)args->arg1);
 }
 
-// Causes the calling process to become unrunnable for at least the specified number of seconds, 
-// and not significantly longer. The seconds must be non-negative.
-// Return values:
-//		   -1: seconds is not valid
-//			0: otherwise
+/* ------------------------------------------------------------------------
+ Name 			- sleepReal
+ Purpose      	- Causes the calling process to become unrunnable for at least the 
+ 				  specified number of seconds
+ Parameters   	- int seconds, to sleep for
+ Returns      	- -1: seconds is not valid, 0: otherwise
+ Side Effects 	- modifies SleepList
+ ----------------------------------------------------------------------- */
 int sleepReal(int seconds){
 	if (seconds < 0) return -1;
 	
@@ -617,13 +669,13 @@ int sleepReal(int seconds){
 	return 0;
 }
 
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-////////////// FIXME: BLOCK COMMENT //////////////
+/* ------------------------------------------------------------------------
+ Name 			- diskRead
+ Purpose      	- called by DiskRead user mode. calls diskReadReal
+ Parameters   	- USLOSS_Sysargs *args
+ Returns      	- void
+ Side Effects 	- none
+ ----------------------------------------------------------------------- */
 void diskRead(USLOSS_Sysargs *args){
     
     void * buffer = args->arg1;
@@ -645,22 +697,24 @@ void diskRead(USLOSS_Sysargs *args){
     args->arg1 = ((void *) (long) readResult);
 }
 
-// Reads sectors sectors from the disk indicated by unit, starting at track track and sector first. 
-// The sectors are copied into buffer. Your driver must handle a range of sectors specified by first 
-// and sectors that spans a track boundary 
-// (after reading the last sector in a track it should read the first sector in the next track). 
-// A file cannot wrap around the end of the disk.
-// Return values:
-// 			-1: invalid parameters
-// 			 0: sectors were read successfully >0: disk’s status register
+/* ------------------------------------------------------------------------
+ Name 			- diskReadReal
+ Purpose      	- Reads sectors sectors from the disk indicated by unit, starting at 
+ 				  track track and sector first. 
+ Parameters   	- int unit, int startTrack, int startSector, int numSectors, void *buffer
+ Returns      	- -1: invalid parameters or 
+ 				   0: sectors were read successfully or
+ 				  >0: disk’s status register
+ Side Effects 	- modifies the diskRequestList
+ ----------------------------------------------------------------------- */
 int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void *buffer){
-    
-    // FIXME: Requests go beyond available diskLocations on topEnd
-    if (numSectors <= 0 || startTrack < 0 || startSector < 0) {
+    if (unit < 0 || unit > USLOSS_DISK_UNITS - 1) {
         return -1;
     }
     
-    if (unit < 0 || unit > 1) {
+    if (numSectors <= 0                                             || 
+        (startTrack < 0  || numTracksOnDisk[unit] - 1 < startTrack) || 
+        (startSector < 0 || startSector > 15)) {
         return -1;
     }
     
@@ -696,7 +750,13 @@ int diskReadReal(int unit, int startTrack, int startSector, int numSectors, void
 	return newRequest.status;
 }
 
-////////////// FIXME: BLOCK COMMENT //////////////
+/* ------------------------------------------------------------------------
+ Name 			- diskWrite
+ Purpose      	- calls diskWriteReal 
+ Parameters   	- USLOSS_Sysargs *args
+ Returns      	- void
+ Side Effects 	- none
+ ----------------------------------------------------------------------- */
 void diskWrite(USLOSS_Sysargs *args){
     
     void * buffer = args->arg1;
@@ -718,24 +778,27 @@ void diskWrite(USLOSS_Sysargs *args){
     args->arg1 = ((void *) (long) writeResult);
 }
 
-// Writes sectors sectors to the disk indicated by unit, starting at track track and sector first. 
-// The contents of the sectors are read from buffer. 
-// Like diskRead, your driver must handle a range of sectors specified by first and sectors that 
-// spans a track boundary. A file cannot wrap around the end of the disk.
-//
-// Return values:
-// 			-1: invalid parameters
-// 			 0: sectors were written successfully >0: disk’s status register
+/* ------------------------------------------------------------------------
+ Name 			- diskWriteReal
+ Purpose      	- adds request to diskRequestList and wakes up disk
+ Parameters   	- USLOSS_Sysargs *args
+ Returns      	- -1: invalid parameters or 
+ 				   0: sectors were written successfully or
+ 				  >0: disk’s status register
+ Side Effects 	- modifies the diskRequestList
+ ----------------------------------------------------------------------- */
 int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, void *buffer){
-    
-    // FIXME: Requests go beyond available diskLocations on topEnd
-    if (numSectors <= 0 || startTrack < 0 || startSector < 0) {
+    if (unit < 0 || unit > USLOSS_DISK_UNITS - 1) {
         return -1;
     }
     
-    if (unit < 0 || unit > 1) {
+    if (numSectors <= 0                                             || 
+        (startTrack < 0  || numTracksOnDisk[unit] - 1 < startTrack) || 
+        (startSector < 0 || startSector > 15)) {
         return -1;
     }
+    
+    
 
     // Add process to process table
     addProcessToProcTable();
@@ -769,8 +832,14 @@ int diskWriteReal(int unit, int startTrack, int startSector, int numSectors, voi
     return newRequest.status;
 }
 
-////////////// FIXME: BLOCK COMMENT //////////////
-void insertDiskRequest(diskReqPtr newRequest) {
+/* ------------------------------------------------------------------------
+ Name 			- insertDiskRequest
+ Purpose      	- adds request to diskRequestList and wakes up disk
+ Parameters   	- diskReqPtr newRequest
+ Returns      	- void
+ Side Effects 	- modifies the diskRequestList
+ ----------------------------------------------------------------------- */
+ void insertDiskRequest(diskReqPtr newRequest) {
     int unit = newRequest->unit;
     
     // If the queue is empty, insert at head of list.
@@ -812,6 +881,13 @@ void insertDiskRequest(diskReqPtr newRequest) {
     }
 }
 
+/* ------------------------------------------------------------------------
+ Name 			- diskQueuePrinter
+ Purpose      	- used for debug purposes
+ Parameters   	- int unit
+ Returns      	- void
+ Side Effects 	- none
+ ----------------------------------------------------------------------- */
 void diskQueuePrinter(int unit) {
     diskReqPtr walker = diskRequestList[unit];
     
@@ -826,36 +902,45 @@ void diskQueuePrinter(int unit) {
     printf("***********************************\n\n");
 }
 
-////////////// FIXME: BLOCK COMMENT //////////////
+/* ------------------------------------------------------------------------
+ Name 			- addProcessToProcTable
+ Purpose      	- add process to process table
+ Parameters   	- int unit
+ Returns      	- void
+ Side Effects 	- modifies proctable
+ ----------------------------------------------------------------------- */
 void addProcessToProcTable() {
     
     int currPID = getpid();
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = currPID;
-    p4ProcTable[currPID % MAXPROC].status = ACTIVE; //FIXME: What status does a new process have?
-    p4ProcTable[currPID % MAXPROC].semID = semcreateReal(0);  // FIXME: Dustin wont like this. He's probably right.
+    p4ProcTable[currPID % MAXPROC].status = ACTIVE;
+    p4ProcTable[currPID % MAXPROC].semID = semcreateReal(0);
 }
 
-////////////// FIXME: BLOCK COMMENT //////////////
-void nullifyProcessEntry() {
+/* ------------------------------------------------------------------------
+ Name 			- nullifyProcessEntry
+ Purpose      	- clears process table entry
+ Parameters   	- void
+ Returns      	- void
+ Side Effects 	- modifies proc table
+ ----------------------------------------------------------------------- */
+ void nullifyProcessEntry() {
     
     int currPID = getpid();
     p4ProcTable[currPID % MAXPROC].nextSleeping = NULL;
     p4ProcTable[currPID % MAXPROC].pid = NONACTIVE;
     p4ProcTable[currPID % MAXPROC].status = EMPTY;
-    p4ProcTable[currPID % MAXPROC].semID = -1;  // FIXME: Dustin wont like this. He's probably right.
+    p4ProcTable[currPID % MAXPROC].semID = -1;
 }
 
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
-
-
+/* ------------------------------------------------------------------------
+ Name 			- diskSize
+ Purpose      	- calls diskSizeReal
+ Parameters   	- USLOSS_Sysargs *args
+ Returns      	- void
+ Side Effects 	- none
+ ----------------------------------------------------------------------- */
 void diskSize(USLOSS_Sysargs *args){
 	if (args->number != SYS_DISKSIZE){
 		terminateReal(1);
@@ -873,18 +958,22 @@ void diskSize(USLOSS_Sysargs *args){
 	setUserMode();
 }
 
-// Returns information about the size of the disk indicated by unit. The sector parameter is filled in with the number of bytes in a sector, track with the number of sectors in a track, and disk with the number of tracks in the disk.
-// Return values:
-// 		-1: invalid parameters
-// 		 0: disk size parameters returned successfully
+/* ------------------------------------------------------------------------
+ Name 			- diskSizeReal
+ Purpose      	- Returns information about the size of the disk indicated by unit
+ Parameters   	- int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk
+ Returns      	- -1: invalid parameters or
+ 				   0: disk size parameters returned successfully
+ Side Effects 	- none 
+ ----------------------------------------------------------------------- */
 int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDisk){
 	
     // Error check
-    if (unit < 0 || unit > 1) {
+    if (unit < 0 || unit > USLOSS_DISK_UNITS - 1) {
         return -1;
     }
     
-    if (numTracksOnDisk[unit] != NULL){
+    if (numTracksOnDisk[unit] != -1){
     	*sectorSize = USLOSS_DISK_SECTOR_SIZE;
     	*sectorsInTrack = USLOSS_DISK_TRACK_SIZE;
     	*tracksInDisk = numTracksOnDisk[unit];
@@ -918,6 +1007,13 @@ int diskSizeReal(int unit, int *sectorSize, int *sectorsInTrack, int *tracksInDi
 	return 0;
 }
 
+/* ------------------------------------------------------------------------
+ Name 			- termRead
+ Purpose      	- helper for TermRead user mode. calls termReadReal
+ Parameters   	- USLOSS_Sysargs *args
+ Returns      	- void
+ Side Effects 	- none 
+ ----------------------------------------------------------------------- */
 void termRead(USLOSS_Sysargs *args){
 	char *buffer = (char *)args->arg1;
 	int size = (int)(long)args->arg2;
@@ -934,12 +1030,14 @@ void termRead(USLOSS_Sysargs *args){
 	args->arg2 = (void *)(long)resultCharsRead;
 }
 
-// This routine reads a line of text from the terminal indicated by unit into the buffer pointed to by buffer. A line of text is terminated by a newline character (‘\n’), which is copied into the buffer along with the other characters in the line. 
-// If the length of a line of input is greater than the value of the size parameter, then the first size characters are returned and the rest discarded.
-// The terminal device driver should maintain a fixed-size buffer of 10 lines to store characters read prior to an invocation of termRead (i.e. a read-ahead buffer). Characters should be discarded if the read-ahead buffer overflows.
-// Return values:
-// 			-1: invalid parameters
-// 			>0: number of characters read
+/* ------------------------------------------------------------------------
+ Name 			- termReadReal
+ Purpose      	- This routine reads a line of text from the terminal indicated by unit into the buffer
+ Parameters   	- int unit, int size, char *buffer
+ Returns      	- -1: invalid parameters or
+ 				  >0: number of characters read
+ Side Effects 	- none 
+ ----------------------------------------------------------------------- */
 int termReadReal(int unit, int size, char *buffer){
 	if (unit < 0 || unit > 3) return -1;
 	if (size <= 0) return -1;
@@ -952,9 +1050,7 @@ int termReadReal(int unit, int size, char *buffer){
 		USLOSS_Console("termReadReal() received %d. Returning...\n", result);
 		return result;
 	}
-	//USLOSS_Console("termReadReal() received %s\n", linebuf);
 	int linelength = strlen(linebuf);
-// 	USLOSS_Console("trR %d  str: |%s|  of len: %d\n", unit, linebuf, linelength);
 	linebuf[linelength] = '\n';
 	
 	if (linelength > size){
@@ -965,11 +1061,16 @@ int termReadReal(int unit, int size, char *buffer){
 		return linelength;
 	}
 	
-	
-	
 	return linelength;
 }
 
+/* ------------------------------------------------------------------------
+ Name 			- termWrite
+ Purpose      	- called by TermWrite. calls termWriteReal
+ Parameters   	- USLOSS_Sysargs *args
+ Returns      	- void
+ Side Effects 	- none 
+ ----------------------------------------------------------------------- */
 void termWrite(USLOSS_Sysargs *args){
 	char *text = (char *)args->arg1;
 	int size = (int)(long)args->arg2;
@@ -986,13 +1087,14 @@ void termWrite(USLOSS_Sysargs *args){
 	args->arg2 = (void *)(long)resultCharsWritten;
 }
 
-// This routine writes size characters — a line of text pointed to by text to the terminal 
-// indicated by unit. A newline is not automatically appended, so if one is needed it must 
-// be included in the text to be written. This routine should not return until the text has 
-// been written to the terminal.
-// Return values:
-// 			-1: invalid parameters
-// 			>0: number of characters written
+/* ------------------------------------------------------------------------
+ Name 			- termWriteReal
+ Purpose      	- This routine writes characters
+ Parameters   	- int unit, int size, char *text
+ Returns      	- number of characters written or
+ 				  -1 if invalid parameters
+ Side Effects 	- none 
+ ----------------------------------------------------------------------- */
 int termWriteReal(int unit, int size, char *text){
 	if (unit < 0 || unit > USLOSS_TERM_UNITS) return -1;
 	
@@ -1014,7 +1116,7 @@ int termWriteReal(int unit, int size, char *text){
  Side Effects - Sets PSR Mode Bit to 0
  ----------------------------------------------------------------------- */
 void setUserMode() {
-    if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {               // 0xE == 14 == 1110
+    if (USLOSS_PsrSet(USLOSS_PsrGet() & 0xE) == USLOSS_ERR_INVALID_PSR) {
         USLOSS_Console("ERROR: setUserMode(): Failed to change to User Mode.\n");
     }
-}  /* setUserMode */
+}
