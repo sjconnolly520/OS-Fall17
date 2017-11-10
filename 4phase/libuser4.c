@@ -1,3 +1,9 @@
+/*
+ * by Stephen Connolly and Dustin Janzen
+ *
+ * CS 452 - Fall 2017
+ */
+
 #include <usyscall.h>
 #include <usloss.h>
 #include <phase1.h>

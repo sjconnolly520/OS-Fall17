@@ -1,3 +1,10 @@
+/*
+ * by Stephen Connolly and Dustin Janzen
+ *
+ * CS 452 - Fall 2017
+ */
+
+
 #ifndef DRIVER_H
 #define DRIVER_H
 
