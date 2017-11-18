@@ -5,7 +5,7 @@
 #include "phase4.h"
 #include <stdlib.h> /* needed for atoi() */
 
-semaphore 	running;
+semaphore 	clockSemID;
 
 static int	ClockDriver(char *);
 static int	DiskDriver(char *);
